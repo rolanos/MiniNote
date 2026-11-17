@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { Icon } from '../../components/Icon';
 import { formatDate } from '../../utils/format';
 import { hasDraftChanges, type EditorState } from './useNoteEditor';
-import { Checklist } from './Checklist';
 import { NoteBody } from './NoteBody';
 
 interface NoteEditorProps {
@@ -13,13 +12,9 @@ interface NoteEditorProps {
   onSubmit: () => Promise<boolean>;
   onRetryLoad: () => void;
   onReloadConflict: () => void;
-  onAddItem: (text: string) => void;
-  onToggleItem: (id: string) => void;
-  onEditItem: (id: string, text: string) => void;
-  onRemoveItem: (id: string) => void;
 }
 
-export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict, onAddItem, onToggleItem, onEditItem, onRemoveItem }: NoteEditorProps) {
+export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict }: NoteEditorProps) {
   const titleInput = useRef<HTMLInputElement>(null);
   const requestId = 'requestId' in state ? state.requestId : null;
 
@@ -87,8 +82,6 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
       <NoteBody key={requestId} content={values.content}
         placeholder={savedNote ? 'В этой заметке нет текста.' : 'Начните писать здесь…'}
         onChange={content => onChange('content', content)} />
-      <Checklist key={requestId} items={values.checklist} onAdd={onAddItem} onToggle={onToggleItem}
-        onEdit={onEditItem} onRemove={onRemoveItem} />
       {state.status === 'failed' && (
         <div className="save-error" role="alert">
           <Icon name="alert" size={21} />

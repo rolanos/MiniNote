@@ -57,10 +57,6 @@ export function App() {
             onSubmit={editor.submit}
             onRetryLoad={() => currentNoteId && editor.select(currentNoteId)}
             onReloadConflict={editor.reloadConflict}
-            onAddItem={editor.addItem}
-            onToggleItem={editor.toggleItem}
-            onEditItem={editor.editItem}
-            onRemoveItem={editor.removeItem}
           />
         </section>
       </main>

@@ -17,8 +17,6 @@ public sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
         builder.Property(note => note.CreationFingerprint).HasMaxLength(64);
         builder.Property(note => note.LastUpdateFingerprint).HasMaxLength(64);
         builder.HasIndex(note => new { note.CreatedAt, note.Id });
-        builder.HasMany(note => note.Checklist).WithOne().HasForeignKey("NoteId")
-            .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(note => note.Notebook).WithMany().HasForeignKey(note => note.NotebookId)
             .OnDelete(DeleteBehavior.Restrict);
     }

@@ -22,32 +22,6 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("MiniNote.Domain.Entities.ChecklistItem", b =>
-                {
-                    b.Property<Guid>("NoteId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsCompleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("Position")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.HasKey("NoteId", "Id");
-
-                    b.HasIndex("NoteId", "Position");
-
-                    b.ToTable("ChecklistItem");
-                });
-
             modelBuilder.Entity("MiniNote.Domain.Entities.Note", b =>
                 {
                     b.Property<Guid>("Id")
@@ -55,8 +29,8 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("Content")
                         .IsRequired()
-                        .HasMaxLength(100000)
-                        .HasColumnType("character varying(100000)");
+                        .HasMaxLength(2610000)
+                        .HasColumnType("character varying(2610000)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -112,15 +86,6 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("MiniNote.Domain.Entities.ChecklistItem", b =>
-                {
-                    b.HasOne("MiniNote.Domain.Entities.Note", null)
-                        .WithMany("Checklist")
-                        .HasForeignKey("NoteId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("MiniNote.Domain.Entities.Note", b =>
                 {
                     b.HasOne("MiniNote.Domain.Entities.Notebook", "Notebook")
@@ -130,11 +95,6 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Notebook");
-                });
-
-            modelBuilder.Entity("MiniNote.Domain.Entities.Note", b =>
-                {
-                    b.Navigation("Checklist");
                 });
 #pragma warning restore 612, 618
         }

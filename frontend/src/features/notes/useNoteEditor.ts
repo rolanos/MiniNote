@@ -14,8 +14,8 @@ export type EditorState =
   | ({ status: 'failed'; error: string } & EditableNote)
   | VersionConflict;
 
-const emptyDraft = (): NoteDraft => ({ title: '', content: '', checklist: [] });
-const toDraft = (note: Note): NoteDraft => ({ title: note.title, content: note.content, checklist: note.checklist });
+const emptyDraft = (): NoteDraft => ({ title: '', content: '' });
+const toDraft = (note: Note): NoteDraft => ({ title: note.title, content: note.content });
 const equal = (left: NoteDraft, right: NoteDraft) => JSON.stringify(left) === JSON.stringify(right);
 
 export function hasDraftChanges(state: EditorState) {
@@ -176,19 +176,6 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
     start: () => { void requestNavigation({ kind: 'new' }); },
     select: (id: string) => { void requestNavigation({ kind: 'note', id }); },
     change: (field: 'title' | 'content', value: string) => editDraft(draft => ({ ...draft, [field]: value })),
-    addItem: (text: string) => {
-      if (text.trim()) editDraft(draft => ({ ...draft, checklist: [...draft.checklist,
-        { id: crypto.randomUUID(), text: text.trim(), isCompleted: false }] }));
-    },
-    toggleItem: (id: string) => editDraft(draft => ({ ...draft,
-      checklist: draft.checklist.map(item => item.id === id ? { ...item, isCompleted: !item.isCompleted } : item) })),
-    editItem: (id: string, text: string) => {
-      const trimmed = text.trim();
-      if (trimmed) editDraft(draft => ({ ...draft,
-        checklist: draft.checklist.map(item => item.id === id ? { ...item, text: trimmed } : item) }));
-    },
-    removeItem: (id: string) => editDraft(draft => ({ ...draft,
-      checklist: draft.checklist.filter(item => item.id !== id) })),
     submit: flush,
     reloadConflict: () => {
       const latest = current.current;

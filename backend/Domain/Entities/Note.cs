@@ -5,7 +5,7 @@ namespace MiniNote.Domain.Entities;
 public sealed class Note
 {
     public const int MaxTitleLength = 200;
-    public const int MaxContentLength = 100_000;
+    public const int MaxContentLength = 2_610_000;
     public const string DefaultTitle = "Без названия";
 
     public Guid Id { get; private set; }
@@ -17,7 +17,6 @@ public sealed class Note
     public string? CreationFingerprint { get; private set; }
     public string? LastUpdateFingerprint { get; private set; }
     public Notebook Notebook { get; private set; } = null!;
-    public List<ChecklistItem> Checklist { get; private set; } = [];
 
     private Note() { }
 
@@ -61,13 +60,5 @@ public sealed class Note
         if (length > 0 && char.IsHighSurrogate(title[length - 1]))
             length--;
         return title[..length].TrimEnd() + suffix;
-    }
-
-    public void ReplaceChecklist(IEnumerable<ChecklistItem> items)
-    {
-        var checklist = items.ToList();
-        if (checklist.Count > 500 || checklist.Select(item => item.Id).Distinct().Count() != checklist.Count)
-            throw new DomainValidationException("checklist", "Допустимо до 500 пунктов с уникальными идентификаторами.");
-        Checklist = checklist;
     }
 }

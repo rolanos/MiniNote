@@ -1,10 +1,8 @@
 import type { ReactNode } from 'react';
 
-type IconName = 'plus' | 'book' | 'notebooks' | 'layers' | 'note' | 'check' | 'arrow' | 'alert' | 'refresh' | 'edit' | 'trash';
+type IconName = 'plus' | 'book' | 'notebooks' | 'layers' | 'note' | 'check' | 'arrow' | 'alert' | 'refresh';
 
 const paths: Record<IconName, ReactNode> = {
-  edit: <path d="m14 5 5 5M4 20l4-.8L20 7l-3-3L5 16l-1 4Z" />,
-  trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7m4-7v7" />,
   plus: <path d="M12 5v14M5 12h14" />,
   book: <><path d="M12 5c-3-2-6-2-9-1v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-3-1-6-1-9 1Z" /><path d="M12 5v15" /></>,
   notebooks: <><rect x="5" y="3" width="15" height="16" rx="3" /><path d="M5 15h12M5 8H3M5 12H3M5 16H3M8 19v2h12" /></>,

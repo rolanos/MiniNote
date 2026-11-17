@@ -1,9 +1,9 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import type { Note, ChecklistItem } from '../src/api/notes';
+import type { Note } from '../src/api/notes';
 
-async function seed(request: APIRequestContext, content = 'Исходный текст', checklist: ChecklistItem[] = []): Promise<Note> {
-  const response = await request.post('/api/notes', { data: { title: `Заметка ${randomUUID()}`, content, checklist } });
+async function seed(request: APIRequestContext, content = 'Исходный текст'): Promise<Note> {
+  const response = await request.post('/api/notes', { data: { title: `Заметка ${randomUUID()}`, content } });
   expect(response.status()).toBe(201);
   return response.json();
 }
@@ -55,13 +55,13 @@ test('US-02: пустой список объясняет состояние и 
 });
 
 test('US-02: открывается полный текст и чек-лист, выбор доступен с клавиатуры', async ({ page, request }) => {
-  const items = [{ id: randomUUID(), text: 'Первое дело', isCompleted: true }];
-  const first = await seed(request, 'Длинный текст. '.repeat(100), items);
+  const text = 'Длинный текст. '.repeat(100);
+  const first = await seed(request, text + '\n- [x] Первое дело');
   const second = await seed(request, 'Другая заметка');
   await page.goto('/');
   await page.getByRole('button', { name: `Открыть заметку: ${first.title}`, exact: true }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByLabel('Текст заметки')).toHaveValue(first.content);
+  await expect(page.getByRole('region', { name: 'Текст заметки' })).toContainText(text.trim());
   await expect(page.getByRole('checkbox', { name: 'Первое дело' })).toBeChecked();
   await open(page, second);
   await expect(page.getByLabel('Текст заметки')).toHaveValue(second.content);
@@ -185,31 +185,38 @@ test('US-04: ошибка блокирует переход до повтора 
 });
 
 test('US-10: непустые пункты, независимые отметки, автосохранение и перезагрузка', async ({ page, request }) => {
-  const note = await seed(request);
+  const note = await seed(request, '');
   await page.goto('/');
   await open(page, note);
-  const input = page.getByLabel('Новый пункт чек-листа');
+  const insert = page.getByRole('button', { name: 'Вставить чекбокс' });
+  const input = page.getByRole('textbox', { name: 'Текст пункта' });
+  await insert.click();
   await input.fill('   ');
-  await expect(page.getByRole('button', { name: 'Добавить пункт' })).toBeDisabled();
-  await input.fill('Первое дело');
-  await page.getByRole('button', { name: 'Добавить пункт' }).click();
-  await input.fill('Второе дело');
   await input.press('Enter');
-  await page.getByRole('checkbox', { name: 'Первое дело', exact: true }).check();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
+  for (const task of ['Первое дело', 'Второе дело']) {
+    await insert.click();
+    await input.fill(task);
+    await input.press('Enter');
+  }
+  const first = page.getByRole('checkbox', { name: 'Первое дело', exact: true });
+  const second = page.getByRole('checkbox', { name: 'Второе дело', exact: true });
+  await first.check();
   await saved(page);
   await page.reload();
   await open(page, note);
-  await expect(page.getByRole('checkbox', { name: 'Первое дело', exact: true })).toBeChecked();
-  await expect(page.getByRole('checkbox', { name: 'Второе дело', exact: true })).not.toBeChecked();
-  await page.getByRole('checkbox', { name: 'Первое дело', exact: true }).uncheck();
-  await page.getByRole('checkbox', { name: 'Второе дело', exact: true }).check();
+  await expect(first).toBeChecked();
+  await expect(second).not.toBeChecked();
+  await first.uncheck();
+  await second.check();
   await saved(page);
   const stored = await (await request.get(`/api/notes/${note.id}`)).json();
-  expect(stored.checklist.map((item: ChecklistItem) => item.isCompleted)).toEqual([false, true]);
+  expect(stored.content).toBe('- [ ] Первое дело\n- [x] Второе дело');
+  expect(stored).not.toHaveProperty('checklist');
   await page.reload();
   await open(page, note);
-  await expect(page.getByRole('checkbox', { name: 'Первое дело', exact: true })).not.toBeChecked();
-  await expect(page.getByRole('checkbox', { name: 'Второе дело', exact: true })).toBeChecked();
+  await expect(first).not.toBeChecked();
+  await expect(second).toBeChecked();
 });
 
 test('US-01/04: повтор создания после потери ответа сохраняет введённый текст без дубля', async ({ page, request }) => {
@@ -319,40 +326,45 @@ test('US-04: новый выбор во время повтора сохране
   expect((await (await request.get(`/api/notes/${first.id}`)).json()).content).toBe('Последний текст');
 });
 
-test('US-10: Enter соблюдает тот же предел пунктов, что и кнопка добавления', async ({ page, request }) => {
-  const checklist = Array.from({ length: 500 }, (_, index) => ({
-    id: randomUUID(), text: `Дело ${index + 1}`, isCompleted: false,
-  }));
-  const note = await seed(request, '', checklist);
+test('API: старые пункты преобразуются в текст с сохранением порядка и переносов', async ({ page, request }) => {
+  const response = await request.post('/api/notes', { data: {
+    title: `Старая заметка ${randomUUID()}`, content: 'Исходный текст\n- [ ] Уже в тексте',
+    checklist: [
+      { id: randomUUID(), text: 'Заголовок дела\r\n- [ ] Продолжение дела', isCompleted: true },
+      { id: randomUUID(), text: 'Второй пункт', isCompleted: false },
+    ],
+  } });
+  expect(response.status()).toBe(201);
+  const note: Note = await response.json();
+  expect(note.content).toBe('Исходный текст\n- [ ] Уже в тексте\n\n- [x] Заголовок дела\n  | - [ ] Продолжение дела\n- [ ] Второй пункт');
+  expect(note).not.toHaveProperty('checklist');
+
   await page.goto('/');
   await open(page, note);
-  const input = page.getByLabel('Новый пункт чек-листа');
-  await input.fill('Лишний пункт');
-  await expect(page.getByRole('button', { name: 'Добавить пункт' })).toBeDisabled();
-  await input.press('Enter');
-  await expect(page.getByRole('checkbox')).toHaveCount(500);
-  await expect(input).toHaveValue('Лишний пункт');
-  await saved(page);
+  await expect(page.getByRole('checkbox')).toHaveCount(3);
+  await expect(page.getByRole('checkbox', { name: /Заголовок дела/ })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Второй пункт' })).not.toBeChecked();
 });
 
 test('US-04: устаревшая вкладка сохраняет черновик и не затирает текст', async ({ page, context, request }) => {
-  const item = { id: randomUUID(), text: 'Отметить дело', isCompleted: false };
-  const note = await seed(request, 'Исходный текст', [item]);
+  const note = await seed(request, 'Исходный текст\n\n- [ ] Отметить дело');
   const other = await seed(request);
   const secondTab = await context.newPage();
   await Promise.all([page.goto('/'), secondTab.goto('/')]);
   await Promise.all([open(page, note), open(secondTab, note)]);
 
-  await page.getByLabel('Текст заметки').fill('Сохранено в первой вкладке');
+  await page.getByRole('button', { name: 'Редактировать весь текст' }).click();
+  const updatedText = note.content.replace('Исходный текст', 'Сохранено в первой вкладке');
+  await page.getByLabel('Текст заметки').fill(updatedText);
   await saved(page);
-  const checkbox = secondTab.getByRole('checkbox', { name: item.text });
+  const checkbox = secondTab.getByRole('checkbox', { name: 'Отметить дело' });
+  const body = secondTab.getByRole('region', { name: 'Текст заметки' });
   await checkbox.check();
   await expect(secondTab.getByRole('alert')).toContainText('Конфликт версий');
   await expect(checkbox).toBeChecked();
-  await expect(secondTab.getByLabel('Текст заметки')).toHaveValue(note.content);
+  await expect(body.getByText('Исходный текст', { exact: true })).toBeVisible();
   const current = await (await request.get(`/api/notes/${note.id}`)).json();
-  expect(current.content).toBe('Сохранено в первой вкладке');
-  expect(current.checklist).toEqual([item]);
+  expect(current.content).toBe(updatedText);
 
   await secondTab.getByRole('button', { name: `Открыть заметку: ${other.title}`, exact: true }).click();
   const dialog = secondTab.getByRole('dialog');
@@ -368,12 +380,12 @@ test('US-04: устаревшая вкладка сохраняет чернов
   await expect(checkbox).toBeChecked();
 
   await reload.click();
-  await expect(secondTab.getByLabel('Текст заметки')).toHaveValue(current.content);
+  await expect(body.getByText('Сохранено в первой вкладке', { exact: true })).toBeVisible();
   await expect(checkbox).not.toBeChecked();
   await checkbox.check();
   await saved(secondTab);
   expect(await (await request.get(`/api/notes/${note.id}`)).json()).toEqual({
-    ...current, version: current.version + 1, checklist: [{ ...item, isCompleted: true }],
+    ...current, version: current.version + 1, content: updatedText.replace('[ ]', '[x]'),
   });
 });
 
@@ -409,8 +421,7 @@ test('API: при параллельных изменениях версии с�
   const url = `/api/notes/${note.id}`;
   expect((await request.put(url, { data: { title: 'Без версии' } })).status()).toBe(400);
   const writes = ['Первый', 'Второй'].map(label => `${label} ${randomUUID()}`).map(title => ({
-    title, content: title, version: note.version,
-    checklist: [{ id: randomUUID(), text: title, isCompleted: false }],
+    title, content: '- [ ] ' + title, version: note.version,
   }));
   const responses = await Promise.all(writes.map(data => request.put(url, { data })));
   expect(responses.map(response => response.status()).sort()).toEqual([200, 409]);
@@ -436,25 +447,25 @@ test('API: повтор создания сверяется с исходным 
   expect((await request.post('/api/notes', { headers, data: edits })).status()).toBe(409);
 });
 
-test('Редактирование и удаление пунктов чек-листа сохраняются после перезагрузки', async ({ page, request }) => {
-  const first = { id: randomUUID(), text: 'Черновой пункт', isCompleted: true };
-  const second = { id: randomUUID(), text: 'Лишний пункт', isCompleted: false };
-  const note = await seed(request, 'Текст заметки', [first, second]);
+test('Пункт редактируется по клику и удаляется при стирании текста', async ({ page, request }) => {
+  const note = await seed(request, 'Начало\n- [x] Черновой пункт\n- [ ] Лишний пункт\nКонец');
   await page.goto('/');
   await open(page, note);
-  await page.getByRole('button', { name: 'Редактировать пункт: Черновой пункт' }).click();
+  await page.getByRole('button', { name: 'Черновой пункт', exact: true }).click();
   const itemText = page.getByRole('textbox', { name: 'Текст пункта' });
-  await itemText.fill('   ');
-  await expect(page.getByRole('button', { name: 'Сохранить пункт' })).toBeDisabled();
+  await itemText.fill('');
   await itemText.fill('Уточнённый пункт');
   await itemText.press('Enter');
-  await page.getByRole('button', { name: 'Удалить пункт: Лишний пункт' }).click();
+  await page.getByRole('button', { name: 'Лишний пункт', exact: true }).click();
+  await itemText.fill('');
+  await itemText.press('Tab');
+  await expect(page.getByRole('checkbox', { name: 'Лишний пункт' })).toHaveCount(0);
   await saved(page);
   await page.reload();
   await open(page, note);
   await expect(page.getByRole('checkbox', { name: 'Уточнённый пункт' })).toBeChecked();
-  await expect(page.getByRole('checkbox', { name: 'Лишний пункт' })).toHaveCount(0);
-  expect((await (await request.get(`/api/notes/${note.id}`)).json()).checklist).toEqual([{ ...first, text: 'Уточнённый пункт' }]);
+  await expect(page.getByRole('checkbox')).toHaveCount(1);
+  expect((await (await request.get(`/api/notes/${note.id}`)).json()).content).toBe('Начало\n- [x] Уточнённый пункт\nКонец');
 });
 
 test('Чекбокс вставляется в строку текста и сохраняет отметку', async ({ page, request }) => {
@@ -468,8 +479,9 @@ test('Чекбокс вставляется в строку текста и со
     element.setSelectionRange(position, position);
   });
   await page.getByRole('button', { name: 'Вставить чекбокс' }).click();
-  await expect(text).toHaveValue('План на завтра\n- [ ] Позвонить\nЗаметка внизу');
-  await page.getByRole('button', { name: 'Показать текст с чекбоксами' }).click();
+  const task = page.getByRole('textbox', { name: 'Текст пункта' });
+  await expect(task).toHaveValue('Позвонить');
+  await task.press('Enter');
   const preview = page.getByRole('region', { name: 'Текст заметки' });
   await expect(preview.getByText('План на завтра')).toBeVisible();
   await expect(preview.getByText('Заметка внизу')).toBeVisible();
@@ -478,7 +490,7 @@ test('Чекбокс вставляется в строку текста и со
   await page.reload();
   await open(page, note);
   await expect(preview.getByRole('checkbox', { name: 'Позвонить' })).toBeChecked();
-  await page.getByRole('button', { name: 'Редактировать текст' }).click();
+  await page.getByRole('button', { name: 'Редактировать весь текст' }).click();
   await expect(text).toHaveValue('План на завтра\n- [x] Позвонить\nЗаметка внизу');
 });
 
@@ -523,7 +535,7 @@ test('API: валидация чек-листа, пустого заголовк
   const result = await request.put(`/api/notes/${first.id}`, { data: { title: ' ', content: '', checklist: items, version: first.version } });
   expect(result.status()).toBe(200);
   const updated = await result.json();
-  expect(updated).toEqual({ ...first, title, content: '', checklist: items, version: first.version + 1 });
+  expect(updated).toEqual({ ...first, title, content: '- [x] Дело', version: first.version + 1 });
   expect(await (await request.get(`/api/notes/${second.id}`)).json()).toEqual(second);
   for (const checklist of [[{ ...items[0], text: ' ' }], [items[0], items[0]], [{ ...items[0], text: 'а'.repeat(1001) }]]) {
     expect((await request.put(`/api/notes/${first.id}`, { data: { checklist, version: updated.version } })).status()).toBe(400);

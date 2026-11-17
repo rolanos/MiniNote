@@ -20,8 +20,7 @@ public sealed class NoteRepository(NotesDbContext db) : INoteRepository
             .ToListAsync(cancellationToken);
 
     public Task<Note?> FindAsync(Guid id, CancellationToken cancellationToken) =>
-        db.Notes.AsNoTracking().Include(note => note.Checklist.OrderBy(item => item.Position))
-            .SingleOrDefaultAsync(note => note.Id == id, cancellationToken);
+        db.Notes.AsNoTracking().SingleOrDefaultAsync(note => note.Id == id, cancellationToken);
 
     public async Task<Note> UpdateAsync(Note note, string updateFingerprint, CancellationToken cancellationToken)
     {
@@ -41,40 +40,20 @@ public sealed class NoteRepository(NotesDbContext db) : INoteRepository
 
     private async Task<Note> SaveUpdateAsync(Note note, string updateFingerprint, CancellationToken cancellationToken)
     {
-        var tracked = await db.Notes.Include(value => value.Checklist)
-            .SingleAsync(value => value.Id == note.Id, cancellationToken);
+        var tracked = await db.Notes.SingleAsync(value => value.Id == note.Id, cancellationToken);
         if (tracked.Version != note.Version)
             throw new NoteVersionConflictException();
 
         var title = tracked.Title == note.Title ? note.Title : await FindAvailableTitleAsync(note, note.Title, cancellationToken);
         tracked.UpdateContent(title, note.Content);
         tracked.RememberCreationFingerprint(note.CreationFingerprint);
-        // Touch the parent row even when only a checklist item changed.
         tracked.RecordSave(updateFingerprint);
-        var incoming = note.Checklist.ToDictionary(item => item.Id);
-        foreach (var item in tracked.Checklist.Where(item => !incoming.ContainsKey(item.Id)).ToArray())
-        {
-            tracked.Checklist.Remove(item);
-            db.Remove(item);
-        }
-        foreach (var item in note.Checklist)
-        {
-            var existing = tracked.Checklist.SingleOrDefault(value => value.Id == item.Id);
-            if (existing is null) tracked.Checklist.Add(item);
-            else existing.Update(item.Text, item.IsCompleted, item.Position);
-        }
-        // EF saves the version and checklist atomically and can retry transient failures.
         try
         {
             await db.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
-            throw new NoteVersionConflictException();
-        }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception, "PK_ChecklistItem"))
-        {
-            // A concurrent save can insert the same checklist item before the version check runs.
             throw new NoteVersionConflictException();
         }
         return tracked;

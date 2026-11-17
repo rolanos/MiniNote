@@ -10,19 +10,11 @@ export interface Note extends Omit<NoteListItem, 'preview'> {
   content: string;
   notebookId: string;
   version: number;
-  checklist: ChecklistItem[];
-}
-
-export interface ChecklistItem {
-  id: string;
-  text: string;
-  isCompleted: boolean;
 }
 
 export interface NoteDraft {
   title: string;
   content: string;
-  checklist: ChecklistItem[];
 }
 
 export class ApiError extends Error {

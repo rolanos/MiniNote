@@ -18,7 +18,7 @@ button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: .65; }
 button, a, input, textarea { outline-offset: 5px; }
 :focus-visible { outline: 3px solid #56b9a9; }
-.title-input:focus-visible, .content-input:focus-visible, .checklist-add input:focus-visible { outline: none; }
+.title-input:focus-visible, .content-input:focus-visible { outline: none; }
 button svg, .section-title svg, .notebook-selected svg { flex-shrink: 0; }
 .app-shell { min-height: 100dvh; }
 .app-header { height: 85px; padding: 0 32px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); background: #fff; }
@@ -84,25 +84,13 @@ button svg, .section-title svg, .notebook-selected svg { flex-shrink: 0; }
 .note-body-actions { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-top: 6px; }
 .note-body .content-input { padding-top: 12px; }
 .note-body-preview { min-height: 180px; padding: 12px 0 24px; color: #3c494c; font-size: 16px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
-.inline-task { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+.inline-task { display: flex; align-items: flex-start; gap: 12px; }
 .inline-task input { width: 19px; height: 19px; flex-shrink: 0; margin: 6px 0 0; accent-color: var(--teal); cursor: pointer; }
-.inline-task.is-completed span { text-decoration: line-through; color: #697773; }
-.checklist { margin: 8px 0 28px; }
-.checklist h2 { font-size: 13px; font-weight: 600; color: #82918c; margin: 0 0 16px; }
-.checklist ul { list-style: none; padding: 0; margin: 0; }
-.checklist label { display: flex; align-items: flex-start; gap: 12px; padding: 7px 0; line-height: 1.6; font-size: 16px; cursor: pointer; }
-.checklist-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.checklist-row-actions { display: flex; flex-shrink: 0; gap: 2px; padding-top: 3px; }
-.item-action { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 5px; background: transparent; color: #526965; }
-.item-action:hover { background: #eaf4f1; color: var(--teal-dark); }
-.item-action.delete-item:hover { background: #fff0ef; color: #a82d2a; }
-.checklist-edit { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; width: 100%; padding: 6px 0; }
-.checklist-edit input { flex: 1; min-width: 120px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; }
-.checklist label span { overflow-wrap: anywhere; }
-.checklist input[type=checkbox] { width: 19px; height: 19px; flex-shrink: 0; margin-top: 3px; accent-color: var(--teal); cursor: pointer; }
-.checklist .is-completed span { text-decoration: line-through; color: #8a9692; }
-.checklist-add { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
-.checklist-add input { flex: 1; min-width: 140px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: #3c494c; font-size: 14px; }
+.inline-task-text { flex: 1; min-width: 0; padding: 0 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit; font: inherit; line-height: inherit; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+button.inline-task-text { cursor: text; }
+button.inline-task-text:hover { background: #f0f6f4; }
+.inline-task.is-completed button { text-decoration: line-through; color: #697773; }
+textarea.inline-task-text { min-height: 32px; resize: vertical; border-color: var(--line); background: #f8fbfa; }
 .content-input::placeholder { color: #a3adac; }
 .editor-footer { min-height: 89px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 19px 0; }
 .draft-hint { color: #929e9f; font-size: 11px; }

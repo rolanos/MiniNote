@@ -29,8 +29,8 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
         var stale = note.Version != request.Version;
         var saved = stale ? ToResponse(note) : null;
         var previousFingerprint = stale || note.CreationFingerprint is null ? ContentFingerprint(note) : null;
-        note.UpdateContent(request.Title, request.Content);
-        if (request.Checklist is not null) note.ReplaceChecklist(ToChecklist(request.Checklist));
+        var items = InlineTasks.NormalizeLegacy(request.Checklist);
+        note.UpdateContent(request.Title, InlineTasks.Append(request.Content, items));
         var updateFingerprint = ContentFingerprint(note);
         if (saved is not null)
         {
@@ -49,9 +49,10 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
         CreateNoteRequest request, Guid requestId, CancellationToken cancellationToken)
     {
         var candidate = Note.Create(requestId, request.Title, request.Content, timeProvider.GetUtcNow().UtcDateTime);
-        candidate.ReplaceChecklist(ToChecklist(request.Checklist ?? []));
-        var fingerprint = ContentFingerprint(candidate);
+        var items = InlineTasks.NormalizeLegacy(request.Checklist);
+        var fingerprint = ContentFingerprint(candidate, items);
         candidate.RememberCreationFingerprint(fingerprint);
+        candidate.UpdateContent(candidate.Title, InlineTasks.Append(candidate.Content, items));
         var (saved, created) = await repository.AddOrGetAsync(candidate, cancellationToken);
         if ((saved.CreationFingerprint ?? ContentFingerprint(saved)) != fingerprint)
             throw new IdempotencyConflictException();
@@ -60,21 +61,12 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
     }
 
     private static NoteResponse ToResponse(Note note) => new(
-        note.Id, note.Title, note.Content, note.NotebookId, Notebook.PersonalName, note.CreatedAt,
-        OrderedChecklist(note).ToArray(), note.Version);
+        note.Id, note.Title, note.Content, note.NotebookId, Notebook.PersonalName, note.CreatedAt, note.Version);
 
-    private static string ContentFingerprint(Note note)
+    private static string ContentFingerprint(Note note, IReadOnlyList<ChecklistItemRequest>? legacyChecklist = null)
     {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new { note.Title, note.Content, Checklist = OrderedChecklist(note) });
+        // Keep the original fingerprint format so pre-upgrade create requests can be replayed.
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new { note.Title, note.Content, Checklist = legacyChecklist ?? [] });
         return Convert.ToHexString(SHA256.HashData(payload));
     }
-
-    private static IEnumerable<ChecklistItemResponse> OrderedChecklist(Note note) =>
-        note.Checklist.OrderBy(item => item.Position).Select(ToChecklistResponse);
-
-    private static IEnumerable<ChecklistItem> ToChecklist(IReadOnlyList<ChecklistItemRequest> items) =>
-        items.Select((item, position) => ChecklistItem.Create(item.Id, item.Text, item.IsCompleted, position));
-
-    private static ChecklistItemResponse ToChecklistResponse(ChecklistItem item) =>
-        new(item.Id, item.Text, item.IsCompleted);
 }
