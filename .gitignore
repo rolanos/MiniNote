@@ -1,0 +1,92 @@
+# Dependencies and local tooling
+node_modules/
+.nuget/packages/
+/.tools/
+
+# Build and deployment output
+bin/
+obj/
+dist/
+artifacts/
+publish/
+*.tsbuildinfo
+*.nupkg
+*.snupkg
+
+# Frontend caches
+.vite/
+.vite-temp/
+.cache/
+.eslintcache
+.stylelintcache
+
+# Test reports and coverage
+TestResults/
+test-results/
+playwright-report/
+playwright/.cache/
+coverage/
+.nyc_output/
+*.trx
+*.coverage
+*.coveragexml
+
+# Local environment and credentials; keep documented examples
+.env
+.env.*
+!.env.example
+!.env.*.example
+appsettings.[Ll]ocal.json
+appsettings.*.[Ll]ocal.json
+*.pfx
+*.p12
+
+# Local Docker overrides and persistent data
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+/postgres-data/
+/docker-data/
+/backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.dump
+*.backup
+
+# IDE state; allow shared VS Code configuration
+.vs/
+.idea/
+.history/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+*.code-workspace
+
+# Logs and temporary files
+logs/
+*.log
+npm-debug.log*
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Operating system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
