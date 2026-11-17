@@ -61,7 +61,7 @@ test('US-02: открывается полный текст и чек-лист, 
   await page.goto('/');
   await page.getByRole('button', { name: `Открыть заметку: ${first.title}`, exact: true }).focus();
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('region', { name: 'Текст заметки' })).toContainText(text.trim());
+  await expect(page.getByRole('textbox', { name: 'Текст заметки' })).toHaveValue(text);
   await expect(page.getByRole('checkbox', { name: 'Первое дело' })).toBeChecked();
   await open(page, second);
   await expect(page.getByLabel('Текст заметки')).toHaveValue(second.content);
@@ -353,16 +353,15 @@ test('US-04: устаревшая вкладка сохраняет чернов
   await Promise.all([page.goto('/'), secondTab.goto('/')]);
   await Promise.all([open(page, note), open(secondTab, note)]);
 
-  await page.getByRole('button', { name: 'Редактировать весь текст' }).click();
   const updatedText = note.content.replace('Исходный текст', 'Сохранено в первой вкладке');
-  await page.getByLabel('Текст заметки').fill(updatedText);
+  await page.getByRole('textbox', { name: 'Текст заметки' }).fill('Сохранено в первой вкладке\n');
   await saved(page);
   const checkbox = secondTab.getByRole('checkbox', { name: 'Отметить дело' });
-  const body = secondTab.getByRole('region', { name: 'Текст заметки' });
+  const body = secondTab.getByRole('textbox', { name: 'Текст заметки' });
   await checkbox.check();
   await expect(secondTab.getByRole('alert')).toContainText('Конфликт версий');
   await expect(checkbox).toBeChecked();
-  await expect(body.getByText('Исходный текст', { exact: true })).toBeVisible();
+  await expect(body).toHaveValue('Исходный текст\n');
   const current = await (await request.get(`/api/notes/${note.id}`)).json();
   expect(current.content).toBe(updatedText);
 
@@ -380,7 +379,7 @@ test('US-04: устаревшая вкладка сохраняет чернов
   await expect(checkbox).toBeChecked();
 
   await reload.click();
-  await expect(body.getByText('Сохранено в первой вкладке', { exact: true })).toBeVisible();
+  await expect(body).toHaveValue('Сохранено в первой вкладке\n');
   await expect(checkbox).not.toBeChecked();
   await checkbox.check();
   await saved(secondTab);
@@ -453,6 +452,8 @@ test('Пункт редактируется по клику и удаляетс�
   await open(page, note);
   await page.getByRole('button', { name: 'Черновой пункт', exact: true }).click();
   const itemText = page.getByRole('textbox', { name: 'Текст пункта' });
+  await expect(page.getByRole('checkbox', { name: 'Черновой пункт' })).toBeChecked();
+  await expect(page.getByRole('button', { name: 'Лишний пункт', exact: true })).toBeVisible();
   await itemText.fill('');
   await itemText.fill('Уточнённый пункт');
   await itemText.press('Enter');
@@ -482,16 +483,40 @@ test('Чекбокс вставляется в строку текста и со
   const task = page.getByRole('textbox', { name: 'Текст пункта' });
   await expect(task).toHaveValue('Позвонить');
   await task.press('Enter');
-  const preview = page.getByRole('region', { name: 'Текст заметки' });
-  await expect(preview.getByText('План на завтра')).toBeVisible();
-  await expect(preview.getByText('Заметка внизу')).toBeVisible();
-  await preview.getByRole('checkbox', { name: 'Позвонить' }).check();
+  const continuation = page.getByRole('textbox', { name: 'Продолжение заметки' });
+  const checkbox = page.getByRole('checkbox', { name: 'Позвонить' });
+  await expect(text).toHaveValue('План на завтра');
+  await expect(continuation).toHaveValue('Заметка внизу');
+  await checkbox.check();
+  await text.fill('План на сегодня');
+  await expect(checkbox).toBeChecked();
+  await continuation.fill('Итог внизу');
+  await expect(checkbox).toBeChecked();
   await saved(page);
   await page.reload();
   await open(page, note);
-  await expect(preview.getByRole('checkbox', { name: 'Позвонить' })).toBeChecked();
-  await page.getByRole('button', { name: 'Редактировать весь текст' }).click();
-  await expect(text).toHaveValue('План на завтра\n- [x] Позвонить\nЗаметка внизу');
+  await expect(checkbox).toBeChecked();
+  await expect(text).toHaveValue('План на сегодня');
+  await expect(continuation).toHaveValue('Итог внизу');
+  expect((await (await request.get(`/api/notes/${note.id}`)).json()).content)
+    .toBe('План на сегодня\n- [x] Позвонить\nИтог внизу');
+});
+
+test('Текст дописывается после последнего чекбокса без смены режима', async ({ page, request }) => {
+  const note = await seed(request, 'До задачи\n- [ ] Проверить');
+  await page.goto('/');
+  await open(page, note);
+  const after = page.getByRole('textbox', { name: 'Продолжение заметки' });
+  const checkbox = page.getByRole('checkbox', { name: 'Проверить' });
+  await after.fill('После задачи\n- [x] Из вставки');
+  await expect(after).toBeFocused();
+  await expect(checkbox).toBeVisible();
+  await page.getByRole('textbox', { name: 'Заголовок' }).focus();
+  await expect(page.getByRole('checkbox', { name: 'Из вставки' })).toBeChecked();
+  await expect(after.first()).toHaveValue('После задачи');
+  await saved(page);
+  expect((await (await request.get(`/api/notes/${note.id}`)).json()).content)
+    .toBe('До задачи\n- [ ] Проверить\nПосле задачи\n- [x] Из вставки');
 });
 
 test('Занятые названия получают свободный номер при создании и переименовании', async ({ request }) => {

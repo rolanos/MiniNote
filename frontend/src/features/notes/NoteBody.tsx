@@ -15,16 +15,19 @@ type Task = {
   gap: string;
   text: string;
 };
-type TextBlock = { kind: 'text'; start: number; text: string };
+type LineRange = { start: number; end: number };
+type TextBlock = LineRange & { kind: 'text'; text: string };
 
-function readBlocks(lines: string[]) {
+function readBlocks(lines: string[], editing: LineRange | null) {
   const blocks: (Task | TextBlock)[] = [];
+  const isEditing = (index: number) => editing && index >= editing.start && index < editing.end;
+  const matchTask = (index: number) => isEditing(index) ? null : taskPattern.exec(lines[index]);
   for (let start = 0; start < lines.length;) {
-    const match = taskPattern.exec(lines[start]);
+    const match = matchTask(start);
     let end = start + 1;
     if (match) {
       const text = [match[4]];
-      while (lines[end]?.startsWith(continuation)) {
+      while (!isEditing(end) && lines[end]?.startsWith(continuation)) {
         text.push(lines[end].slice(continuation.length));
         end++;
       }
@@ -32,21 +35,25 @@ function readBlocks(lines: string[]) {
         kind: 'task', start, end, prefix: match[1], checked: match[2] !== ' ', gap: match[3], text: text.join('\n'),
       });
     } else {
-      while (end < lines.length && !taskPattern.test(lines[end])) end++;
-      blocks.push({ kind: 'text', start, text: lines.slice(start, end).join('\n') });
+      while (end < lines.length && !matchTask(end)) end++;
+      blocks.push({ kind: 'text', start, end, text: lines.slice(start, end).join('\n') });
     }
     start = end;
+  }
+  if (blocks.at(-1)?.kind === 'task') {
+    blocks.push({ kind: 'text', start: lines.length, end: lines.length, text: '' });
   }
   return blocks;
 }
 
-function TaskRow({ task, startEditing, onToggle, onChange, onRemove, onFinish }: {
+function TaskRow({ task, startEditing, onToggle, onChange, onRemove, onFinish, onFocus }: {
   task: Task;
   startEditing: boolean;
   onToggle: () => void;
   onChange: (text: string) => boolean;
   onRemove: () => void;
   onFinish: () => void;
+  onFocus: () => void;
 }) {
   const [draft, setDraft] = useState<string | null>(startEditing ? task.text : null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -66,7 +73,7 @@ function TaskRow({ task, startEditing, onToggle, onChange, onRemove, onFinish }:
   }
 
   return (
-    <div className={task.checked ? 'inline-task is-completed' : 'inline-task'}>
+    <div className={task.checked ? 'inline-task is-completed' : 'inline-task'} onFocus={onFocus}>
       <input type="checkbox" checked={task.checked}
         aria-label={task.text.trim() || 'Пункт в тексте'} onChange={onToggle} />
       {editing ? (
@@ -103,48 +110,51 @@ export function NoteBody({ content, placeholder, onChange }: {
   placeholder: string;
   onChange: (content: string) => void;
 }) {
-  const [editSource, setEditSource] = useState(false);
+  const [plainEdit, setPlainEdit] = useState<LineRange | null>(null);
   const [focusedTask, setFocusedTask] = useState<number | null>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
-  const focusSource = useRef(false);
+  const lastText = useRef<{ start: number; field: HTMLTextAreaElement } | null>(null);
   const lines = content.split(/\r\n|\r|\n/);
-  const blocks = readBlocks(lines);
+  const blocks = readBlocks(lines, plainEdit);
   const hasTasks = blocks.some(block => block.kind === 'task');
-  const editing = !hasTasks || editSource;
+  const firstText = blocks.find(block => block.kind === 'text');
 
-  useLayoutEffect(() => {
-    if (!input.current || !focusSource.current) return;
-    const end = input.current.value.length;
-    input.current.focus();
-    input.current.setSelectionRange(end, end);
-    focusSource.current = false;
-  }, [editing]);
-
-  function insertTask() {
-    const body = input.current?.value ?? lines.join('\n');
-    const cursor = input.current?.selectionStart ?? body.length;
-    const begin = cursor === 0 ? 0 : body.lastIndexOf('\n', cursor - 1) + 1;
-    const nextBreak = body.indexOf('\n', cursor);
-    const end = nextBreak === -1 ? body.length : nextBreak;
-    const newLine = !input.current && begin !== body.length || taskPattern.test(body.slice(begin, end));
-    const position = newLine ? end : begin;
-    const prefix = newLine ? '\n' + marker : marker;
-    if (body.length + prefix.length > maxLength) return;
-
-    setFocusedTask(body.slice(0, position).split('\n').length - 1 + Number(newLine));
-    setEditSource(false);
-    onChange(body.slice(0, position) + prefix + body.slice(position));
-  }
-
-  function writeTask(task: Task, text: string | null, checked = task.checked) {
-    const replacement = text === null ? '' : task.prefix + (checked ? 'x' : ' ') + task.gap
-      + text.replaceAll('\n', '\n' + continuation);
+  function writeLines(range: LineRange, replacement: string[]) {
     const nextLines = [...lines];
-    nextLines.splice(task.start, task.end - task.start, ...(text === null ? [] : [replacement]));
+    nextLines.splice(range.start, range.end - range.start, ...replacement);
     const next = nextLines.join('\n');
     if (next.length > maxLength) return false;
     onChange(next);
     return true;
+  }
+
+  function writeText(block: TextBlock, value: string) {
+    if (block.text === value) return;
+    if (writeLines(block, [value])) {
+      // Keep pasted or typed Markdown editable until the user leaves this text block.
+      setPlainEdit({ start: block.start, end: block.start + value.split('\n').length });
+    }
+  }
+
+  function insertTask() {
+    const anchor = lastText.current;
+    const active = anchor?.field.isConnected && blocks.find(
+      block => block.kind === 'text' && block.start === anchor.start,
+    );
+    const start = active && anchor
+      ? active.start + anchor.field.value.slice(0, anchor.field.selectionStart).split('\n').length - 1
+      : lines[lines.length - 1] === '' ? lines.length - 1 : lines.length;
+    const line = lines[start];
+    if (!writeLines({ start, end: start + Number(line !== undefined) }, [marker + (line ?? '')])) return;
+
+    lastText.current = null;
+    setPlainEdit(null);
+    setFocusedTask(start);
+  }
+
+  function writeTask(task: Task, text: string | null, checked = task.checked) {
+    if (text === null) return writeLines(task, []);
+    return writeLines(task, [task.prefix + (checked ? 'x' : ' ') + task.gap
+      + text.replaceAll('\n', '\n' + continuation)]);
   }
 
   return (
@@ -153,35 +163,29 @@ export function NoteBody({ content, placeholder, onChange }: {
         <button type="button" className="text-button" onClick={insertTask} disabled={content.length > maxLength - marker.length}>
           <Icon name="plus" size={16} />Вставить чекбокс
         </button>
-        {hasTasks && <button type="button" className="text-button" onClick={() => {
-          focusSource.current = !editing;
-          setFocusedTask(null);
-          setEditSource(!editing);
-        }}>
-          {editing ? 'Показать чекбоксы' : 'Редактировать весь текст'}
-        </button>}
       </div>
-      {editing ? (
-        <>
-          <label className="visually-hidden" htmlFor="note-content">Текст заметки</label>
-          <textarea ref={input} id="note-content" className="content-input" name="content"
-            placeholder={placeholder} value={content} maxLength={maxLength} onChange={event => {
-              setEditSource(true);
-              onChange(event.target.value);
-            }} />
-        </>
-      ) : (
-        <div className="note-body-preview" role="region" aria-label="Текст заметки">
-          {blocks.map(block => block.kind === 'text' ? (
-            <div key={block.start}>{block.text}{(!block.text || block.text.endsWith('\n')) && <br />}</div>
-          ) : (
-            <TaskRow key={block.start} task={block} startEditing={focusedTask === block.start}
-              onToggle={() => writeTask(block, block.text, !block.checked)}
-              onChange={text => writeTask(block, text)} onRemove={() => writeTask(block, null)}
-              onFinish={() => setFocusedTask(null)} />
-          ))}
-        </div>
-      )}
+      <div className="note-body-editor" role="region" aria-label="Содержимое заметки">
+        {blocks.map(block => block.kind === 'text' ? (
+          <div key={`text-${block.start}`} className={hasTasks ? 'note-text-block' : 'note-text-block note-text-whole'}>
+            <div className="note-text-measure" aria-hidden="true">{block.text + ' '}</div>
+            <textarea className="content-input" rows={1}
+              aria-label={block === firstText ? 'Текст заметки' : 'Продолжение заметки'}
+              placeholder={hasTasks ? block.start === lines.length ? 'Продолжить заметку…' : undefined : placeholder}
+              value={block.text} maxLength={maxLength}
+              onFocus={event => {
+                lastText.current = { start: block.start, field: event.currentTarget };
+                setPlainEdit({ start: block.start, end: block.end });
+              }}
+              onBlur={() => setPlainEdit(null)}
+              onChange={event => writeText(block, event.currentTarget.value)} />
+          </div>
+        ) : (
+          <TaskRow key={`task-${block.start}`} task={block} startEditing={focusedTask === block.start}
+            onToggle={() => writeTask(block, block.text, !block.checked)}
+            onChange={text => writeTask(block, text)} onRemove={() => writeTask(block, null)}
+            onFinish={() => setFocusedTask(null)} onFocus={() => { lastText.current = null; }} />
+        ))}
+      </div>
     </div>
   );
 }
