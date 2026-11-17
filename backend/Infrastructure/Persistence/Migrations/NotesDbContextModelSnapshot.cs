@@ -65,6 +65,10 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("LastUpdateFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<Guid>("NotebookId")
                         .HasColumnType("uuid");
 

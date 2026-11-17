@@ -17,17 +17,27 @@ async function saved(page: Page) {
   await expect(page.getByText('Сохранено', { exact: true })).toBeVisible();
 }
 
+async function nextUntitled(request: APIRequestContext) {
+  const notes: Note[] = await (await request.get('/api/notes')).json();
+  const titles = new Set(notes.map(note => note.title.toLowerCase()));
+  const base = 'Без названия';
+  let title = base;
+  for (let number = 2; titles.has(title.toLowerCase()); number++) title = `${base} (${number})`;
+  return title;
+}
+
 async function freezeTime(page: Page) {
   await page.clock.install({ time: new Date('2030-01-01T00:00:00Z') });
   await page.clock.pauseAt(new Date('2030-01-01T00:00:01Z'));
 }
 
-test('US-01: новая пустая заметка сразу появляется в списке и редакторе', async ({ page }) => {
+test('US-01: новая пустая заметка сразу появляется в списке и редакторе', async ({ page, request }) => {
+  const title = await nextUntitled(request);
   await page.goto('/');
   await page.getByRole('button', { name: 'Новая заметка', exact: true }).click();
   await saved(page);
-  await expect(page.locator('.note-card.is-current h3')).toHaveText('Без названия');
-  await expect(page.getByLabel('Заголовок', { exact: true })).toHaveValue('Без названия');
+  await expect(page.locator('.note-card.is-current h3')).toHaveText(title);
+  await expect(page.getByLabel('Заголовок', { exact: true })).toHaveValue(title);
   await expect(page.getByLabel('Текст заметки')).toHaveValue('');
   await expect(page.locator('.notebook-pill')).toHaveText('Личное');
 });
@@ -398,7 +408,7 @@ test('API: при параллельных изменениях версии с�
   const note = await seed(request);
   const url = `/api/notes/${note.id}`;
   expect((await request.put(url, { data: { title: 'Без версии' } })).status()).toBe(400);
-  const writes = ['Первый', 'Второй'].map(title => ({
+  const writes = ['Первый', 'Второй'].map(label => `${label} ${randomUUID()}`).map(title => ({
     title, content: title, version: note.version,
     checklist: [{ id: randomUUID(), text: title, isCompleted: false }],
   }));
@@ -426,14 +436,94 @@ test('API: повтор создания сверяется с исходным 
   expect((await request.post('/api/notes', { headers, data: edits })).status()).toBe(409);
 });
 
+test('Редактирование и удаление пунктов чек-листа сохраняются после перезагрузки', async ({ page, request }) => {
+  const first = { id: randomUUID(), text: 'Черновой пункт', isCompleted: true };
+  const second = { id: randomUUID(), text: 'Лишний пункт', isCompleted: false };
+  const note = await seed(request, 'Текст заметки', [first, second]);
+  await page.goto('/');
+  await open(page, note);
+  await page.getByRole('button', { name: 'Редактировать пункт: Черновой пункт' }).click();
+  const itemText = page.getByRole('textbox', { name: 'Текст пункта' });
+  await itemText.fill('   ');
+  await expect(page.getByRole('button', { name: 'Сохранить пункт' })).toBeDisabled();
+  await itemText.fill('Уточнённый пункт');
+  await itemText.press('Enter');
+  await page.getByRole('button', { name: 'Удалить пункт: Лишний пункт' }).click();
+  await saved(page);
+  await page.reload();
+  await open(page, note);
+  await expect(page.getByRole('checkbox', { name: 'Уточнённый пункт' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Лишний пункт' })).toHaveCount(0);
+  expect((await (await request.get(`/api/notes/${note.id}`)).json()).checklist).toEqual([{ ...first, text: 'Уточнённый пункт' }]);
+});
+
+test('Чекбокс вставляется в строку текста и сохраняет отметку', async ({ page, request }) => {
+  const note = await seed(request, 'План на завтра\nПозвонить\nЗаметка внизу');
+  await page.goto('/');
+  await open(page, note);
+  const text = page.getByRole('textbox', { name: 'Текст заметки' });
+  await text.evaluate((element: HTMLTextAreaElement) => {
+    const position = element.value.indexOf('Позвонить');
+    element.focus();
+    element.setSelectionRange(position, position);
+  });
+  await page.getByRole('button', { name: 'Вставить чекбокс' }).click();
+  await expect(text).toHaveValue('План на завтра\n- [ ] Позвонить\nЗаметка внизу');
+  await page.getByRole('button', { name: 'Показать текст с чекбоксами' }).click();
+  const preview = page.getByRole('region', { name: 'Текст заметки' });
+  await expect(preview.getByText('План на завтра')).toBeVisible();
+  await expect(preview.getByText('Заметка внизу')).toBeVisible();
+  await preview.getByRole('checkbox', { name: 'Позвонить' }).check();
+  await saved(page);
+  await page.reload();
+  await open(page, note);
+  await expect(preview.getByRole('checkbox', { name: 'Позвонить' })).toBeChecked();
+  await page.getByRole('button', { name: 'Редактировать текст' }).click();
+  await expect(text).toHaveValue('План на завтра\n- [x] Позвонить\nЗаметка внизу');
+});
+
+test('Занятые названия получают свободный номер при создании и переименовании', async ({ request }) => {
+  const title = `Планы ${randomUUID()}`;
+  const create = (name: string) => request.post('/api/notes', { data: { title: name } });
+  expect((await create(title)).status()).toBe(201);
+  expect((await create(`${title} (2)`)).status()).toBe(201);
+
+  const copies = await Promise.all([create(title.toLowerCase()), create(title.toLowerCase())]);
+  expect(copies.map(response => response.status())).toEqual([201, 201]);
+  const titles = await Promise.all(copies.map(async response => (await response.json()).title));
+  expect(titles.sort()).toEqual([`${title.toLowerCase()} (3)`, `${title.toLowerCase()} (4)`]);
+
+  const note = await seed(request);
+  const url = `/api/notes/${note.id}`;
+  const data = { title: `  ${title}  `, version: note.version, content: note.content };
+  const response = await request.put(url, { data });
+  expect(response.status()).toBe(200);
+  const renamed = await response.json();
+  expect(renamed.title).toBe(`${title} (5)`);
+  const retry = await request.put(url, { data });
+  expect(retry.status()).toBe(200);
+  expect(await retry.json()).toEqual(renamed);
+
+  const headers = { 'Idempotency-Key': randomUUID() };
+  const input = { title, content: 'Новая заметка' };
+  const created = await request.post('/api/notes', { data: input, headers });
+  expect(created.status()).toBe(201);
+  const saved = await created.json();
+  expect(saved.title).toBe(`${title} (6)`);
+  const replay = await request.post('/api/notes', { data: input, headers });
+  expect(replay.status()).toBe(200);
+  expect(await replay.json()).toEqual(saved);
+});
+
 test('API: валидация чек-листа, пустого заголовка и изоляция заметок', async ({ request }) => {
   const first = await seed(request);
   const second = await seed(request);
   const items = [{ id: randomUUID(), text: 'Дело', isCompleted: true }];
+  const title = await nextUntitled(request);
   const result = await request.put(`/api/notes/${first.id}`, { data: { title: ' ', content: '', checklist: items, version: first.version } });
   expect(result.status()).toBe(200);
   const updated = await result.json();
-  expect(updated).toEqual({ ...first, title: 'Без названия', content: '', checklist: items, version: first.version + 1 });
+  expect(updated).toEqual({ ...first, title, content: '', checklist: items, version: first.version + 1 });
   expect(await (await request.get(`/api/notes/${second.id}`)).json()).toEqual(second);
   for (const checklist of [[{ ...items[0], text: ' ' }], [items[0], items[0]], [{ ...items[0], text: 'а'.repeat(1001) }]]) {
     expect((await request.put(`/api/notes/${first.id}`, { data: { checklist, version: updated.version } })).status()).toBe(400);

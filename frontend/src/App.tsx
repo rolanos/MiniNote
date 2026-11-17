@@ -59,6 +59,8 @@ export function App() {
             onReloadConflict={editor.reloadConflict}
             onAddItem={editor.addItem}
             onToggleItem={editor.toggleItem}
+            onEditItem={editor.editItem}
+            onRemoveItem={editor.removeItem}
           />
         </section>
       </main>

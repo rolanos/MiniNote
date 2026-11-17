@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon';
 import { formatDate } from '../../utils/format';
 import { hasDraftChanges, type EditorState } from './useNoteEditor';
 import { Checklist } from './Checklist';
+import { NoteBody } from './NoteBody';
 
 interface NoteEditorProps {
   state: EditorState;
@@ -14,9 +15,11 @@ interface NoteEditorProps {
   onReloadConflict: () => void;
   onAddItem: (text: string) => void;
   onToggleItem: (id: string) => void;
+  onEditItem: (id: string, text: string) => void;
+  onRemoveItem: (id: string) => void;
 }
 
-export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict, onAddItem, onToggleItem }: NoteEditorProps) {
+export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict, onAddItem, onToggleItem, onEditItem, onRemoveItem }: NoteEditorProps) {
   const titleInput = useRef<HTMLInputElement>(null);
   const requestId = 'requestId' in state ? state.requestId : null;
 
@@ -81,17 +84,11 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
         autoComplete="off"
       />
       <div className="editor-divider" />
-      <label className="visually-hidden" htmlFor="note-content">Текст заметки</label>
-      <textarea
-        id="note-content"
-        className="content-input"
-        name="content"
+      <NoteBody key={requestId} content={values.content}
         placeholder={savedNote ? 'В этой заметке нет текста.' : 'Начните писать здесь…'}
-        value={values.content}
-        onChange={event => onChange('content', event.target.value)}
-        maxLength={100000}
-      />
-      <Checklist key={requestId} items={values.checklist} onAdd={onAddItem} onToggle={onToggleItem} />
+        onChange={content => onChange('content', content)} />
+      <Checklist key={requestId} items={values.checklist} onAdd={onAddItem} onToggle={onToggleItem}
+        onEdit={onEditItem} onRemove={onRemoveItem} />
       {state.status === 'failed' && (
         <div className="save-error" role="alert">
           <Icon name="alert" size={21} />

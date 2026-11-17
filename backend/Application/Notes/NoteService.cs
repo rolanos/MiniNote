@@ -27,19 +27,22 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
             throw new DomainValidationException("version", "Укажите версию заметки из последнего ответа сервера.");
 
         var stale = note.Version != request.Version;
+        var saved = stale ? ToResponse(note) : null;
         var previousFingerprint = stale || note.CreationFingerprint is null ? ContentFingerprint(note) : null;
         note.UpdateContent(request.Title, request.Content);
         if (request.Checklist is not null) note.ReplaceChecklist(ToChecklist(request.Checklist));
-        if (stale)
+        var updateFingerprint = ContentFingerprint(note);
+        if (saved is not null)
         {
-            // A lost response can leave the client retrying an already applied edit.
-            if (previousFingerprint == ContentFingerprint(note))
-                return ToResponse(note);
+            // The saved title may have acquired a suffix when this request was first applied.
+            if (previousFingerprint == updateFingerprint
+                || (request.Version == saved.Version - 1 && note.LastUpdateFingerprint == updateFingerprint))
+                return saved;
             throw new NoteVersionConflictException();
         }
 
         note.RememberCreationFingerprint(previousFingerprint);
-        return ToResponse(await repository.UpdateAsync(note, cancellationToken));
+        return ToResponse(await repository.UpdateAsync(note, updateFingerprint, cancellationToken));
     }
 
     public async Task<(NoteResponse Note, bool Created)> CreateAsync(

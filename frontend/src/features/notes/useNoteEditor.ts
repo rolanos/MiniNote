@@ -74,7 +74,9 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
             commit({ ...latest, status: 'conflict', note: saved, error: 'Заметка уже изменена в другой вкладке.' });
           } else {
             commit({ status: 'ready', requestId: saved.id, note: saved,
-              draft: hasNewInput ? latest.draft : toDraft(saved) });
+              draft: hasNewInput ? {
+                ...latest.draft, title: latest.draft.title === submitted.title ? saved.title : latest.draft.title,
+              } : toDraft(saved) });
           }
         }
         return saved;
@@ -180,6 +182,13 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
     },
     toggleItem: (id: string) => editDraft(draft => ({ ...draft,
       checklist: draft.checklist.map(item => item.id === id ? { ...item, isCompleted: !item.isCompleted } : item) })),
+    editItem: (id: string, text: string) => {
+      const trimmed = text.trim();
+      if (trimmed) editDraft(draft => ({ ...draft,
+        checklist: draft.checklist.map(item => item.id === id ? { ...item, text: trimmed } : item) }));
+    },
+    removeItem: (id: string) => editDraft(draft => ({ ...draft,
+      checklist: draft.checklist.filter(item => item.id !== id) })),
     submit: flush,
     reloadConflict: () => {
       const latest = current.current;

@@ -15,6 +15,7 @@ public sealed class Note
     public DateTime CreatedAt { get; private set; }
     public long Version { get; private set; }
     public string? CreationFingerprint { get; private set; }
+    public string? LastUpdateFingerprint { get; private set; }
     public Notebook Notebook { get; private set; } = null!;
     public List<ChecklistItem> Checklist { get; private set; } = [];
 
@@ -47,7 +48,20 @@ public sealed class Note
 
     public void RememberCreationFingerprint(string? fingerprint) => CreationFingerprint ??= fingerprint;
 
-    public void AdvanceVersion() => Version++;
+    public void RecordSave(string updateFingerprint)
+    {
+        Version++;
+        LastUpdateFingerprint = updateFingerprint;
+    }
+
+    public static string NumberedTitle(string title, int number)
+    {
+        var suffix = FormattableString.Invariant($" ({number})");
+        var length = Math.Min(title.Length, MaxTitleLength - suffix.Length);
+        if (length > 0 && char.IsHighSurrogate(title[length - 1]))
+            length--;
+        return title[..length].TrimEnd() + suffix;
+    }
 
     public void ReplaceChecklist(IEnumerable<ChecklistItem> items)
     {
