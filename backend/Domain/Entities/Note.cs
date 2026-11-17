@@ -13,6 +13,8 @@ public sealed class Note
     public string Content { get; private set; } = string.Empty;
     public Guid NotebookId { get; private set; }
     public DateTime CreatedAt { get; private set; }
+    public long Version { get; private set; }
+    public string? CreationFingerprint { get; private set; }
     public Notebook Notebook { get; private set; } = null!;
     public List<ChecklistItem> Checklist { get; private set; } = [];
 
@@ -42,6 +44,10 @@ public sealed class Note
         Title = string.IsNullOrWhiteSpace(title) ? DefaultTitle : title.Trim();
         Content = content ?? string.Empty;
     }
+
+    public void RememberCreationFingerprint(string? fingerprint) => CreationFingerprint ??= fingerprint;
+
+    public void AdvanceVersion() => Version++;
 
     public void ReplaceChecklist(IEnumerable<ChecklistItem> items)
     {

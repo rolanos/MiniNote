@@ -51,6 +51,7 @@ try {
     $headers = @{ 'Idempotency-Key' = $requestKey }
     $created = Invoke-RestMethod "$apiUrl/api/notes" -Method Post -Headers $headers -ContentType 'application/json' -Body $payload
     $editedPayload = @{
+        version = $created.version
         title = 'Edited persistence check'
         content = ('Updated text ' * 300)
         checklist = @(
@@ -70,11 +71,16 @@ try {
             Assert-Command "$service $operation"
             Wait-Api
             $restored = Invoke-RestMethod "$apiUrl/api/notes/$($created.id)"
-            if ($restored.id -ne $expected.id -or $restored.title -cne $expected.title -or $restored.content -cne $expected.content -or $restored.createdAt -cne $expected.createdAt) {
+            if ($restored.id -ne $expected.id -or $restored.title -cne $expected.title -or $restored.content -cne $expected.content -or $restored.createdAt -cne $expected.createdAt -or $restored.version -ne $expected.version) {
                 throw "Note changed after $service $operation."
             }
             if (($restored.checklist | ConvertTo-Json -Depth 5 -Compress) -cne ($expected.checklist | ConvertTo-Json -Depth 5 -Compress)) {
                 throw "Checklist changed after $service $operation."
+            }
+            $replayed = Invoke-WebRequest "$apiUrl/api/notes" -Method Post -Headers $headers -ContentType 'application/json' -Body $payload -UseBasicParsing
+            $replayedNote = $replayed.Content | ConvertFrom-Json
+            if ($replayed.StatusCode -ne 200 -or $replayedNote.id -ne $created.id -or $replayedNote.version -ne $expected.version) {
+                throw "Creation replay changed after $service $operation."
             }
             Write-Output "PASS: note survives $service $operation."
         }

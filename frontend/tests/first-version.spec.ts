@@ -139,9 +139,11 @@ test('US-04: потерянный ответ не очищает ввод; по�
   await expect(page.getByLabel('Текст заметки')).toHaveValue('Сохранить после сбоя');
   await page.clock.runFor(10000);
   expect(writes).toBe(1);
+  await page.getByLabel('Текст заметки').fill('Добавлено после сбоя');
   await page.getByRole('button', { name: 'Повторить сохранение', exact: true }).click();
   await saved(page);
-  expect((await (await request.get(`/api/notes/${note.id}`)).json()).content).toBe('Сохранить после сбоя');
+  expect(writes).toBe(3);
+  expect((await (await request.get(`/api/notes/${note.id}`)).json()).content).toBe('Добавлено после сбоя');
 });
 
 test('US-04: ошибка блокирует переход до повтора или явного отказа', async ({ page, request }) => {
@@ -323,20 +325,121 @@ test('US-10: Enter соблюдает тот же предел пунктов, �
   await saved(page);
 });
 
+test('US-04: устаревшая вкладка сохраняет черновик и не затирает текст', async ({ page, context, request }) => {
+  const item = { id: randomUUID(), text: 'Отметить дело', isCompleted: false };
+  const note = await seed(request, 'Исходный текст', [item]);
+  const other = await seed(request);
+  const secondTab = await context.newPage();
+  await Promise.all([page.goto('/'), secondTab.goto('/')]);
+  await Promise.all([open(page, note), open(secondTab, note)]);
+
+  await page.getByLabel('Текст заметки').fill('Сохранено в первой вкладке');
+  await saved(page);
+  const checkbox = secondTab.getByRole('checkbox', { name: item.text });
+  await checkbox.check();
+  await expect(secondTab.getByRole('alert')).toContainText('Конфликт версий');
+  await expect(checkbox).toBeChecked();
+  await expect(secondTab.getByLabel('Текст заметки')).toHaveValue(note.content);
+  const current = await (await request.get(`/api/notes/${note.id}`)).json();
+  expect(current.content).toBe('Сохранено в первой вкладке');
+  expect(current.checklist).toEqual([item]);
+
+  await secondTab.getByRole('button', { name: `Открыть заметку: ${other.title}`, exact: true }).click();
+  const dialog = secondTab.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Повторить и перейти' })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Остаться', exact: true }).click();
+
+  const reload = secondTab.getByRole('button', { name: 'Отбросить правки и обновить', exact: true });
+  const url = `**/api/notes/${note.id}`;
+  await secondTab.route(url, route => route.abort('failed'), { times: 1 });
+  await reload.click();
+  await expect(secondTab.getByRole('alert')).toContainText('Не удалось обновить заметку');
+  await expect(checkbox).toBeChecked();
+
+  await reload.click();
+  await expect(secondTab.getByLabel('Текст заметки')).toHaveValue(current.content);
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await saved(secondTab);
+  expect(await (await request.get(`/api/notes/${note.id}`)).json()).toEqual({
+    ...current, version: current.version + 1, checklist: [{ ...item, isCompleted: true }],
+  });
+});
+
+test('US-04: повтор создания не затирает правки, сохранённые до подтверждения', async ({ page, request }) => {
+  let created!: Note;
+  let first = true;
+  await page.route('**/api/notes', async route => {
+    if (first && route.request().method() === 'POST') {
+      first = false;
+      created = await (await route.fetch()).json();
+      await route.abort('failed');
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Новая заметка', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Не удалось подтвердить создание');
+  const body = page.getByLabel('Текст заметки');
+  await body.fill('Мой черновик');
+  const url = `/api/notes/${created.id}`;
+  const edit = await request.put(url, { data: { version: created.version, content: 'Уже сохранено' } });
+  expect(edit.status()).toBe(200);
+
+  await page.getByRole('button', { name: 'Повторить сохранение', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Конфликт версий');
+  await expect(body).toHaveValue('Мой черновик');
+  expect(await (await request.get(url)).json()).toEqual(await edit.json());
+});
+
+test('API: при параллельных изменениях версии сохраняется только один запрос', async ({ request }) => {
+  const note = await seed(request);
+  const url = `/api/notes/${note.id}`;
+  expect((await request.put(url, { data: { title: 'Без версии' } })).status()).toBe(400);
+  const writes = ['Первый', 'Второй'].map(title => ({
+    title, content: title, version: note.version,
+    checklist: [{ id: randomUUID(), text: title, isCompleted: false }],
+  }));
+  const responses = await Promise.all(writes.map(data => request.put(url, { data })));
+  expect(responses.map(response => response.status()).sort()).toEqual([200, 409]);
+  const winner = writes[responses.findIndex(response => response.ok())];
+  expect(await (await request.get(url)).json()).toEqual({ ...note, ...winner, version: note.version + 1 });
+});
+
+test('API: повтор создания сверяется с исходным запросом после редактирования', async ({ request }) => {
+  const headers = { 'Idempotency-Key': randomUUID() };
+  const initial = {
+    title: 'Исходная заметка', content: 'Исходный текст',
+    checklist: [{ id: randomUUID(), text: 'Дело', isCompleted: false }],
+  };
+  const creation = await request.post('/api/notes', { headers, data: initial });
+  expect(creation.status()).toBe(201);
+  const created: Note = await creation.json();
+  const edits = { ...initial, content: 'После правки', checklist: [] };
+  const saved = await request.put(`/api/notes/${created.id}`, { data: { ...edits, version: created.version } });
+  expect(saved.status()).toBe(200);
+  const replay = await request.post('/api/notes', { headers, data: initial });
+  expect(replay.status()).toBe(200);
+  expect(await replay.json()).toEqual(await saved.json());
+  expect((await request.post('/api/notes', { headers, data: edits })).status()).toBe(409);
+});
+
 test('API: валидация чек-листа, пустого заголовка и изоляция заметок', async ({ request }) => {
   const first = await seed(request);
   const second = await seed(request);
   const items = [{ id: randomUUID(), text: 'Дело', isCompleted: true }];
-  const result = await request.put(`/api/notes/${first.id}`, { data: { title: ' ', content: '', checklist: items } });
+  const result = await request.put(`/api/notes/${first.id}`, { data: { title: ' ', content: '', checklist: items, version: first.version } });
   expect(result.status()).toBe(200);
   const updated = await result.json();
-  expect(updated).toEqual({ ...first, title: 'Без названия', content: '', checklist: items });
+  expect(updated).toEqual({ ...first, title: 'Без названия', content: '', checklist: items, version: first.version + 1 });
   expect(await (await request.get(`/api/notes/${second.id}`)).json()).toEqual(second);
   for (const checklist of [[{ ...items[0], text: ' ' }], [items[0], items[0]], [{ ...items[0], text: 'а'.repeat(1001) }]]) {
-    expect((await request.put(`/api/notes/${first.id}`, { data: { checklist } })).status()).toBe(400);
+    expect((await request.put(`/api/notes/${first.id}`, { data: { checklist, version: updated.version } })).status()).toBe(400);
   }
   expect(await (await request.get(`/api/notes/${first.id}`)).json()).toEqual(updated);
-  expect((await request.put(`/api/notes/${first.id}`, { data: { title: 'а'.repeat(201) } })).status()).toBe(400);
+  expect((await request.put(`/api/notes/${first.id}`, { data: { title: 'а'.repeat(201), version: updated.version } })).status()).toBe(400);
   expect((await request.get(`/api/notes/${randomUUID()}`)).status()).toBe(404);
   const schema = await (await request.get(`${process.env.E2E_API_URL || 'http://127.0.0.1:5080'}/openapi/v1.json`)).json();
   expect(Object.keys(schema.paths).sort()).toEqual(['/api/notes', '/api/notes/{id}']);

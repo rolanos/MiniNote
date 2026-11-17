@@ -8,11 +8,11 @@ public sealed record CreateNoteRequest(string? Title = null, string? Content = n
     IReadOnlyList<ChecklistItemRequest>? Checklist = null);
 
 public sealed record UpdateNoteRequest(string? Title = null, string? Content = null,
-    IReadOnlyList<ChecklistItemRequest>? Checklist = null);
+    IReadOnlyList<ChecklistItemRequest>? Checklist = null, long? Version = null);
 
 public sealed record NoteResponse(
     Guid Id, string Title, string Content, Guid NotebookId, string NotebookName, DateTime CreatedAt,
-    IReadOnlyList<ChecklistItemResponse> Checklist);
+    IReadOnlyList<ChecklistItemResponse> Checklist, long Version);
 
 public sealed record NoteListItemResponse(
     Guid Id, string Title, string Preview, string NotebookName, DateTime CreatedAt);

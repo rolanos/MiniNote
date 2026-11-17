@@ -56,13 +56,14 @@ export function App() {
             onChange={editor.change}
             onSubmit={editor.submit}
             onRetryLoad={() => currentNoteId && editor.select(currentNoteId)}
+            onReloadConflict={editor.reloadConflict}
             onAddItem={editor.addItem}
             onToggleItem={editor.toggleItem}
           />
         </section>
       </main>
       {editor.pendingDestination && <UnsavedChangesDialog
-        onSave={editor.saveAndNavigate}
+        onSave={editor.state.status === 'conflict' ? undefined : editor.saveAndNavigate}
         onDiscard={editor.discardAndNavigate}
         onCancel={editor.cancelNavigation}
       />}

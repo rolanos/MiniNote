@@ -13,6 +13,8 @@ public sealed class NoteConfiguration : IEntityTypeConfiguration<Note>
         builder.Property(note => note.Title).HasMaxLength(Note.MaxTitleLength).IsRequired();
         builder.Property(note => note.Content).HasMaxLength(Note.MaxContentLength).IsRequired();
         builder.Property(note => note.CreatedAt).HasColumnType("timestamp with time zone");
+        builder.Property(note => note.Version).IsConcurrencyToken();
+        builder.Property(note => note.CreationFingerprint).HasMaxLength(64);
         builder.HasIndex(note => new { note.CreatedAt, note.Id });
         builder.HasMany(note => note.Checklist).WithOne().HasForeignKey("NoteId")
             .OnDelete(DeleteBehavior.Cascade);

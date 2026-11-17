@@ -25,7 +25,13 @@ public sealed class NoteRepository(NotesDbContext db) : INoteRepository
     {
         var tracked = await db.Notes.Include(value => value.Checklist)
             .SingleAsync(value => value.Id == note.Id, cancellationToken);
+        if (tracked.Version != note.Version)
+            throw new NoteVersionConflictException();
+
         tracked.UpdateContent(note.Title, note.Content);
+        tracked.RememberCreationFingerprint(note.CreationFingerprint);
+        // Touch the parent row even when only a checklist item changed.
+        tracked.AdvanceVersion();
         var incoming = note.Checklist.ToDictionary(item => item.Id);
         foreach (var item in tracked.Checklist.Where(item => !incoming.ContainsKey(item.Id)).ToArray())
         {
@@ -38,7 +44,25 @@ public sealed class NoteRepository(NotesDbContext db) : INoteRepository
             if (existing is null) tracked.Checklist.Add(item);
             else existing.Update(item.Text, item.IsCompleted, item.Position);
         }
-        await db.SaveChangesAsync(cancellationToken);
+        // EF saves the version and checklist atomically and can retry transient failures.
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new NoteVersionConflictException();
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: "PK_ChecklistItem"
+            })
+        {
+            // A concurrent save can insert the same checklist item before the version check runs.
+            throw new NoteVersionConflictException();
+        }
         return tracked;
     }
 

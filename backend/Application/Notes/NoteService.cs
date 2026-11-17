@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using MiniNote.Application.Abstractions;
 using MiniNote.Domain.Entities;
+using MiniNote.Domain.Exceptions;
 
 namespace MiniNote.Application.Notes;
 
@@ -20,8 +23,22 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
         if (note is null)
             return null;
 
+        if (request.Version is null or < 0)
+            throw new DomainValidationException("version", "Укажите версию заметки из последнего ответа сервера.");
+
+        var stale = note.Version != request.Version;
+        var previousFingerprint = stale || note.CreationFingerprint is null ? ContentFingerprint(note) : null;
         note.UpdateContent(request.Title, request.Content);
         if (request.Checklist is not null) note.ReplaceChecklist(ToChecklist(request.Checklist));
+        if (stale)
+        {
+            // A lost response can leave the client retrying an already applied edit.
+            if (previousFingerprint == ContentFingerprint(note))
+                return ToResponse(note);
+            throw new NoteVersionConflictException();
+        }
+
+        note.RememberCreationFingerprint(previousFingerprint);
         return ToResponse(await repository.UpdateAsync(note, cancellationToken));
     }
 
@@ -30,10 +47,10 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
     {
         var candidate = Note.Create(requestId, request.Title, request.Content, timeProvider.GetUtcNow().UtcDateTime);
         candidate.ReplaceChecklist(ToChecklist(request.Checklist ?? []));
+        var fingerprint = ContentFingerprint(candidate);
+        candidate.RememberCreationFingerprint(fingerprint);
         var (saved, created) = await repository.AddOrGetAsync(candidate, cancellationToken);
-        if (saved.Title != candidate.Title || saved.Content != candidate.Content
-            || !saved.Checklist.OrderBy(item => item.Position).Select(ToChecklistResponse)
-                .SequenceEqual(candidate.Checklist.Select(ToChecklistResponse)))
+        if ((saved.CreationFingerprint ?? ContentFingerprint(saved)) != fingerprint)
             throw new IdempotencyConflictException();
 
         return (ToResponse(saved), created);
@@ -41,7 +58,16 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
 
     private static NoteResponse ToResponse(Note note) => new(
         note.Id, note.Title, note.Content, note.NotebookId, Notebook.PersonalName, note.CreatedAt,
-        note.Checklist.OrderBy(item => item.Position).Select(ToChecklistResponse).ToArray());
+        OrderedChecklist(note).ToArray(), note.Version);
+
+    private static string ContentFingerprint(Note note)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new { note.Title, note.Content, Checklist = OrderedChecklist(note) });
+        return Convert.ToHexString(SHA256.HashData(payload));
+    }
+
+    private static IEnumerable<ChecklistItemResponse> OrderedChecklist(Note note) =>
+        note.Checklist.OrderBy(item => item.Position).Select(ToChecklistResponse);
 
     private static IEnumerable<ChecklistItem> ToChecklist(IReadOnlyList<ChecklistItemRequest> items) =>
         items.Select((item, position) => ChecklistItem.Create(item.Id, item.Text, item.IsCompleted, position));

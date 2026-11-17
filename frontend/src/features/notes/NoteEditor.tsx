@@ -11,11 +11,12 @@ interface NoteEditorProps {
   onChange: (field: 'title' | 'content', value: string) => void;
   onSubmit: () => Promise<boolean>;
   onRetryLoad: () => void;
+  onReloadConflict: () => void;
   onAddItem: (text: string) => void;
   onToggleItem: (id: string) => void;
 }
 
-export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onAddItem, onToggleItem }: NoteEditorProps) {
+export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict, onAddItem, onToggleItem }: NoteEditorProps) {
   const titleInput = useRef<HTMLInputElement>(null);
   const requestId = 'requestId' in state ? state.requestId : null;
 
@@ -56,9 +57,10 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
   const dirty = hasDraftChanges(state);
   const saving = state.status === 'saving';
   const failed = state.status === 'failed';
-  const saved = Boolean(savedNote) && !dirty && !saving && !failed;
+  const conflict = state.status === 'conflict';
+  const saved = Boolean(savedNote) && !dirty && !saving && !failed && !conflict;
   const hint = saving ? 'Сохраняем на сервере…'
-    : failed ? 'Не удалось сохранить изменения' : 'Ожидание автосохранения…';
+    : failed || conflict ? 'Не удалось сохранить изменения' : 'Ожидание автосохранения…';
 
   return (
     <form className="note-form" onSubmit={event => event.preventDefault()}>
@@ -100,6 +102,16 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
           </div>
         </div>
       )}
+      {conflict && (
+        <div className="save-error" role="alert">
+          <Icon name="alert" size={21} />
+          <div>
+            <strong>Конфликт версий</strong>
+            <p>{state.error}</p>
+            <p>Черновик остался в редакторе. Скопируйте нужные правки перед загрузкой сохранённой версии.</p>
+          </div>
+        </div>
+      )}
       <footer className="editor-footer">
         <div className="editor-save-status">
           {saved ? (
@@ -112,6 +124,9 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
           )}
         </div>
         {saving && <span className="spinner" aria-hidden="true" />}
+        {conflict && <button type="button" className="button button-primary" onClick={onReloadConflict}>
+          <Icon name="refresh" size={19} />Отбросить правки и обновить
+        </button>}
         {failed && <button type="button" className="button button-primary" onClick={() => void onSubmit()}>
           <Icon name="refresh" size={19} />Повторить сохранение
         </button>}

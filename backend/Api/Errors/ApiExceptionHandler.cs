@@ -21,6 +21,10 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetailsSer
                 Status = StatusCodes.Status409Conflict, Title = "Повторный запрос содержит другие данные.",
                 Detail = exception.Message
             },
+            NoteVersionConflictException => new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict, Title = exception.Message
+            },
             _ => new ProblemDetails
             {
                 Status = StatusCodes.Status500InternalServerError,

@@ -25,10 +25,12 @@ public sealed class NotesController(INoteService notes) : ControllerBase
     }
 
     /// <summary>Сохранить заголовок, текст и чек-лист заметки.</summary>
+    /// <remarks>Передайте версию из последнего ответа сервера. При конфликте версий возвращается 409.</remarks>
     [HttpPut("{id:guid}")]
     [ProducesResponseType<NoteResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<NoteResponse>> Update(
         Guid id, [FromBody] UpdateNoteRequest request, CancellationToken cancellationToken)
     {
