@@ -1,17 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createNotebook, type Notebook, type NoteListItem } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 import { errorMessage } from '../../utils/errors';
 import { noteDragType, notebookDragType, useReorderDrop, type Reorder } from './useReorderDrop';
 
 export type NoteView = { kind: 'active'; notebookId?: string } | { kind: 'trash' };
-export type NoteMove = {
-  note: Pick<NoteListItem, 'id' | 'notebookId'>;
-  mode: 'drag' | 'choose';
-};
+export type NoteMove = Pick<NoteListItem, 'id' | 'notebookId'>;
 
 export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled,
-  move, onMove, cancelMove, moveStatus, onReorder }: {
+  move, onMove, moveStatus, onReorder }: {
   notebooks: Notebook[];
   view: NoteView;
   onSelect: (view: NoteView) => void;
@@ -19,7 +16,6 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
   disabled: boolean;
   move: NoteMove | null;
   onMove: (notebook: Notebook) => void;
-  cancelMove: () => void;
   moveStatus: string;
   onReorder?: Reorder;
 }) {
@@ -28,15 +24,10 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const [hovered, setHovered] = useState<string | null>(null);
-  const sidebar = useRef<HTMLElement>(null);
   const reorder = useReorderDrop(notebookDragType, onReorder);
   const canDrag = Boolean(onReorder && !move && !disabled && notebooks.length > 1);
 
-  useEffect(() => {
-    setHovered(null);
-    if (move?.mode === 'choose')
-      sidebar.current?.querySelector<HTMLButtonElement>('[data-move-target]')?.focus();
-  }, [move]);
+  useEffect(() => setHovered(null), [move]);
 
   async function addNotebook() {
     if (pending || !name.trim()) return;
@@ -55,10 +46,7 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
   }
 
   return (
-    <aside ref={sidebar} className="sidebar" aria-label="Блокноты"
-      onKeyDown={event => {
-        if (event.key === 'Escape' && move?.mode === 'choose') cancelMove();
-      }}>
+    <aside className="sidebar" aria-label="Блокноты">
       <h2 className="section-title"><Icon name="notebooks" />Блокноты</h2>
       <nav className="notebook-nav" aria-label="Разделы заметок">
         <button type="button" className="notebook-link" disabled={disabled}
@@ -67,11 +55,11 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
           <Icon name="layers" size={19} /><span>Все заметки</span>
         </button>
         {notebooks.map(notebook => {
-          const eligible = Boolean(move && move.note.notebookId !== notebook.id && !disabled);
+          const eligible = move !== null && move.notebookId !== notebook.id && !disabled;
           const drop = reorder.dropProps(notebook.id);
           return (
             <button type="button" key={notebook.id} className="notebook-link"
-              disabled={disabled || (move?.mode === 'choose' && !eligible)}
+              disabled={disabled}
               data-move-target={eligible ? '' : undefined}
               data-drop-hover={eligible && hovered === notebook.id ? '' : undefined}
               data-reorder-edge={drop['data-reorder-edge']}
@@ -84,11 +72,10 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
                 reorder.start(notebook.id);
               }}
               onDragEnd={reorder.clear}
-              onClick={() => move?.mode === 'choose' ? onMove(notebook)
-                : onSelect({ kind: 'active', notebookId: notebook.id })}
+              onClick={() => onSelect({ kind: 'active', notebookId: notebook.id })}
               onDragOver={event => {
                 drop.onDragOver?.(event);
-                if (!eligible || move?.mode !== 'drag' || !event.dataTransfer.types.includes(noteDragType)) return;
+                if (!eligible || !event.dataTransfer.types.includes(noteDragType)) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
                 setHovered(notebook.id);
@@ -101,7 +88,7 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
               }}
               onDrop={event => {
                 drop.onDrop?.(event);
-                if (!eligible || move?.mode !== 'drag' || event.dataTransfer.getData(noteDragType) !== move.note.id) return;
+                if (!eligible || event.dataTransfer.getData(noteDragType) !== move.id) return;
                 event.preventDefault();
                 onMove(notebook);
               }}>
@@ -114,12 +101,6 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
           <Icon name="trash" size={19} /><span>Корзина</span>
         </button>
       </nav>
-      {move?.mode === 'choose' && (
-        <div className="move-instruction">
-          <span>Выберите блокнот для переноса.</span>
-          <button type="button" className="text-button" onClick={cancelMove}>Отменить перенос</button>
-        </div>
-      )}
       <div className={moveStatus ? 'move-feedback' : 'visually-hidden'} role="status">{moveStatus}</div>
       {creating ? (
         <form className="notebook-create" onSubmit={event => { event.preventDefault(); void addNotebook(); }}>

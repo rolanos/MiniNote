@@ -128,7 +128,7 @@ test('US-07: создание в выбранном блокноте и пере
   expect(await (await request.get(`/api/notes/${original.id}`)).json()).toMatchObject({ notebookName: name });
 });
 
-test('Карточка переносится без открытия, а выбранную заметку можно перенести с клавиатуры', async ({ page, request }) => {
+test('Карточка переносится без открытия и сохраняет черновик открытой заметки', async ({ page, request }) => {
   const source = await createNotebook(request);
   const target = await createNotebook(request);
   const dragged = await addTag(request, await createNote(request, 'Эту заметку переносим мышью', source.id),
@@ -138,6 +138,7 @@ test('Карточка переносится без открытия, а выб
   await view(page, source.name).click();
   await noteCard(page, open.title).click();
   await page.getByLabel('Текст заметки').fill('Сохранить этот черновик');
+  await expect(page.getByRole('button', { name: 'Перенести в блокнот', exact: true })).toHaveCount(0);
   await noteCard(page, dragged.title).dragTo(view(page, target.name));
   await expect(page.getByRole('status').filter({ hasText: 'Заметка перенесена' })).toBeVisible();
   await expect(noteCard(page, dragged.title)).toHaveCount(0);
@@ -146,15 +147,11 @@ test('Карточка переносится без открытия, а выб
   expect(await (await request.get(`/api/notes/${dragged.id}`)).json())
     .toMatchObject({ notebookId: target.id, tags: dragged.tags });
 
-  await page.getByRole('button', { name: 'Перенести в блокнот', exact: true }).press('Enter');
-  await expect(view(page, target.name)).toHaveAttribute('data-move-target', '');
-  await view(page, target.name).press('Enter');
-  await expect(page.locator('.notebook-pill')).toHaveText(target.name);
   await view(page, target.name).click();
   await expect(noteCard(page, dragged.title)).toBeVisible();
-  await expect(noteCard(page, open.title)).toBeVisible();
+  await expect(noteCard(page, open.title)).toHaveCount(0);
   expect(await (await request.get(`/api/notes/${open.id}`)).json())
-    .toMatchObject({ notebookId: target.id, content: 'Сохранить этот черновик' });
+    .toMatchObject({ notebookId: source.id, content: 'Сохранить этот черновик' });
 });
 
 test('US-08 и US-09: фильтры работают вместе, тег можно назначить и снять', async ({ page, request }) => {

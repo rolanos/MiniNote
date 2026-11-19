@@ -72,8 +72,8 @@ export function App() {
   };
 
   async function moveNote(notebook: Notebook) {
-    if (!move || notebook.id === move.note.notebookId || trash) return;
-    const sourceId = move.note.id;
+    if (!move || notebook.id === move.notebookId || trash) return;
+    const sourceId = move.id;
     setMove(null);
     setMoveStatus('');
     const success = await editor.changeOrganization(note => note.notebookId === notebook.id
@@ -115,7 +115,7 @@ export function App() {
 
       <main className="workspace">
         <NotebookSidebar notebooks={notebooks} view={view} disabled={editor.organizing} onSelect={selectView}
-          move={move} onMove={notebook => void moveNote(notebook)} cancelMove={() => setMove(null)} moveStatus={moveStatus}
+          move={move} onMove={notebook => void moveNote(notebook)} moveStatus={moveStatus}
           onReorder={!reordering ? (id, targetId, before) => void reorder('notebooks', id, targetId, before) : undefined}
           onCreated={notebook => {
             setNotebooks(current => [...current.filter(item => item.id !== notebook.id), notebook]);
@@ -150,9 +150,9 @@ export function App() {
             event.dataTransfer.setData(noteDragType, note.id);
             event.dataTransfer.effectAllowed = 'move';
             setMoveStatus('');
-            setMove({ note, mode: 'drag' });
+            setMove(note);
           }}
-          onDragEnd={() => setMove(current => current?.mode === 'drag' ? null : current)}
+          onDragEnd={() => setMove(null)}
         />
 
         <section className="editor-panel" aria-label="Редактор заметки">
@@ -167,12 +167,8 @@ export function App() {
             trashView={trash}
             organizing={editor.organizing}
             organization={selectedNote && <NoteOrganization key={selectedNote.id}
-              note={selectedNote} tags={tags} canMove={notebooks.length > 1}
+              note={selectedNote} tags={tags}
               disabled={editor.organizing || editor.state.status === 'conflict'}
-              onMove={() => {
-                setMoveStatus('');
-                setMove({ note: selectedNote, mode: 'choose' });
-              }}
               onChange={change => editor.changeOrganization(note => organizeNote(note, change))}
               onTrash={() => void editor.changeOrganization(note => setNoteInTrash(note, !note.deletedAt), true)} />}
           />

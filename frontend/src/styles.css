@@ -60,8 +60,7 @@ button svg, .section-title svg { flex-shrink: 0; }
   .notebook-link[data-reorder-edge=before]::after { inset-inline: -4px auto; }
   .notebook-link[data-reorder-edge=after]::after { inset-inline: auto -4px; }
 }
-.move-instruction, .move-feedback { margin: 10px 10px 0; font-size: 12px; color: #356d61; overflow-wrap: anywhere; }
-.move-instruction .text-button { display: block; }
+.move-feedback { margin: 10px 10px 0; font-size: 12px; color: #356d61; overflow-wrap: anywhere; }
 .trash-link { margin-top: 10px; }
 .add-notebook { align-self: flex-start; margin: 14px 10px 0; }
 .notebook-create { display: grid; gap: 8px; margin-top: 15px; font-size: 12px; color: #4f625f; }

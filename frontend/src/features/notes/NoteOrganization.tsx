@@ -2,12 +2,10 @@ import { useState } from 'react';
 import type { Note, OrganizationChange, Tag } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 
-export function NoteOrganization({ note, tags, disabled, canMove, onMove, onChange, onTrash }: {
+export function NoteOrganization({ note, tags, disabled, onChange, onTrash }: {
   note: Note;
   tags: Tag[];
   disabled: boolean;
-  canMove: boolean;
-  onMove: () => void;
   onChange: (change: OrganizationChange) => Promise<boolean>;
   onTrash: () => void;
 }) {
@@ -35,9 +33,6 @@ export function NoteOrganization({ note, tags, disabled, canMove, onMove, onChan
   return (
     <div className="organization-controls">
       <div className="organization-actions">
-        <button type="button" className="text-button" disabled={disabled || !canMove} onClick={onMove}>
-          <Icon name="arrow" size={17} />Перенести в блокнот
-        </button>
         <button type="button" className="text-button danger-action" disabled={disabled} onClick={onTrash}>
           <Icon name="trash" size={17} />В корзину
         </button>
