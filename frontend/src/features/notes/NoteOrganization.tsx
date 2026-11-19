@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import type { Note, Notebook, OrganizationChange, Tag } from '../../api/notes';
+import type { Note, OrganizationChange, Tag } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 
-export function NoteOrganization({ note, notebooks, tags, disabled, onChange, onTrash }: {
+export function NoteOrganization({ note, tags, disabled, canMove, onMove, onChange, onTrash }: {
   note: Note;
-  notebooks: Notebook[];
   tags: Tag[];
   disabled: boolean;
+  canMove: boolean;
+  onMove: () => void;
   onChange: (change: OrganizationChange) => Promise<boolean>;
   onTrash: () => void;
 }) {
@@ -34,15 +35,9 @@ export function NoteOrganization({ note, notebooks, tags, disabled, onChange, on
   return (
     <div className="organization-controls">
       <div className="organization-actions">
-        <label className="compact-field">
-          <span>Блокнот заметки</span>
-          <select className="control" value={note.notebookId} disabled={disabled}
-            onChange={event => void onChange({ notebookId: event.currentTarget.value })}>
-            {!notebooks.some(notebook => notebook.id === note.notebookId) &&
-              <option value={note.notebookId}>{note.notebookName}</option>}
-            {notebooks.map(notebook => <option key={notebook.id} value={notebook.id}>{notebook.name}</option>)}
-          </select>
-        </label>
+        <button type="button" className="text-button" disabled={disabled || !canMove} onClick={onMove}>
+          <Icon name="arrow" size={17} />Перенести в блокнот
+        </button>
         <button type="button" className="text-button danger-action" disabled={disabled} onClick={onTrash}>
           <Icon name="trash" size={17} />В корзину
         </button>

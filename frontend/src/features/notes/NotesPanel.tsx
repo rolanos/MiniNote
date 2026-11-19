@@ -1,3 +1,4 @@
+import type { DragEvent } from 'react';
 import type { NoteListItem, Tag } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 import { formatDate, formatNoteCount } from '../../utils/format';
@@ -17,10 +18,13 @@ interface NotesPanelProps {
   onQuery: (value: string) => void;
   onTag: (id: string) => void;
   disabled: boolean;
+  canDrag: boolean;
+  onDragStart: (event: DragEvent<HTMLButtonElement>, note: NoteListItem) => void;
+  onDragEnd: () => void;
 }
 
 export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onReload, onSelect,
-  trash, query, tagId, tags, onQuery, onTag, disabled }: NotesPanelProps) {
+  trash, query, tagId, tags, onQuery, onTag, disabled, canDrag, onDragStart, onDragEnd }: NotesPanelProps) {
   const empty = notes.length === 0;
   const filtered = Boolean(query.trim() || tagId);
 
@@ -75,6 +79,9 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
                   aria-label={`Открыть заметку: ${note.title}`}
                   aria-current={note.id === currentNoteId ? 'true' : undefined}
                   disabled={disabled}
+                  draggable={canDrag && !disabled}
+                  onDragStart={event => onDragStart(event, note)}
+                  onDragEnd={onDragEnd}
                   onClick={() => onSelect(note.id)}
                 >
                   <Icon name="note" size={25} />

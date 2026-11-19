@@ -30,7 +30,8 @@ const view = (page: Page, name: string) =>
   page.getByRole('navigation', { name: 'Разделы заметок' }).getByRole('button', { name, exact: true });
 
 test('US-07: создание в выбранном блокноте и перенос сохраняют введённый текст', async ({ page, request }) => {
-  const original = await createNote(request, 'До переноса');
+  const source = await createNotebook(request);
+  const original = await createNote(request, 'До переноса', source.id);
   const name = `Учёба ${randomUUID()}`;
   await page.goto('/');
   await page.getByRole('button', { name: 'Новый блокнот' }).click();
@@ -45,17 +46,47 @@ test('US-07: создание в выбранном блокноте и пере
   await page.getByLabel('Заголовок').fill(createdTitle);
   await expect(noteCard(page, createdTitle)).toBeVisible();
 
-  await view(page, 'Личное').click();
+  await view(page, source.name).click();
   await expect(noteCard(page, createdTitle)).toHaveCount(0);
   await noteCard(page, original.title).click();
+  await expect(page.getByLabel('Заголовок')).toHaveValue(original.title);
   await page.getByLabel('Текст заметки').fill('Черновик непосредственно перед переносом');
-  await page.getByLabel('Блокнот заметки').selectOption({ label: name });
+  await noteCard(page, original.title).locator('h3').dragTo(view(page, name));
   await expect(page.locator('.notebook-pill')).toHaveText(name);
   await expect(noteCard(page, original.title)).toHaveCount(0);
   await view(page, name).click();
   await noteCard(page, original.title).click();
   await expect(page.getByLabel('Текст заметки')).toHaveValue('Черновик непосредственно перед переносом');
   expect(await (await request.get(`/api/notes/${original.id}`)).json()).toMatchObject({ notebookName: name });
+});
+
+test('Карточка переносится без открытия, а выбранную заметку можно перенести с клавиатуры', async ({ page, request }) => {
+  const source = await createNotebook(request);
+  const target = await createNotebook(request);
+  const dragged = await addTag(request, await createNote(request, 'Эту заметку переносим мышью', source.id),
+    `Тег переноса ${randomUUID()}`);
+  const open = await createNote(request, 'Текст открытой заметки', source.id);
+  await page.goto('/');
+  await view(page, source.name).click();
+  await noteCard(page, open.title).click();
+  await page.getByLabel('Текст заметки').fill('Сохранить этот черновик');
+  await noteCard(page, dragged.title).dragTo(view(page, target.name));
+  await expect(page.getByRole('status').filter({ hasText: 'Заметка перенесена' })).toBeVisible();
+  await expect(noteCard(page, dragged.title)).toHaveCount(0);
+  await expect(page.getByLabel('Заголовок')).toHaveValue(open.title);
+  await expect(page.getByLabel('Текст заметки')).toHaveValue('Сохранить этот черновик');
+  expect(await (await request.get(`/api/notes/${dragged.id}`)).json())
+    .toMatchObject({ notebookId: target.id, tags: dragged.tags });
+
+  await page.getByRole('button', { name: 'Перенести в блокнот', exact: true }).press('Enter');
+  await expect(view(page, target.name)).toHaveAttribute('data-move-target', '');
+  await view(page, target.name).press('Enter');
+  await expect(page.locator('.notebook-pill')).toHaveText(target.name);
+  await view(page, target.name).click();
+  await expect(noteCard(page, dragged.title)).toBeVisible();
+  await expect(noteCard(page, open.title)).toBeVisible();
+  expect(await (await request.get(`/api/notes/${open.id}`)).json())
+    .toMatchObject({ notebookId: target.id, content: 'Сохранить этот черновик' });
 });
 
 test('US-08 и US-09: фильтры работают вместе, тег можно назначить и снять', async ({ page, request }) => {

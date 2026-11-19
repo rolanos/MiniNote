@@ -3,7 +3,7 @@ import { listNotebooks, listTags, organizeNote, setNoteInTrash, type Note, type 
 import { Icon } from './components/Icon';
 import { NoteEditor } from './features/notes/NoteEditor';
 import { NoteOrganization } from './features/notes/NoteOrganization';
-import { NotebookSidebar, type NoteView } from './features/notes/NotebookSidebar';
+import { NotebookSidebar, noteDragType, type NoteMove, type NoteView } from './features/notes/NotebookSidebar';
 import { NotesPanel } from './features/notes/NotesPanel';
 import { useNoteEditor } from './features/notes/useNoteEditor';
 import { useNotes } from './features/notes/useNotes';
@@ -18,6 +18,8 @@ export function App() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [catalogError, setCatalogError] = useState('');
   const [catalogRevision, setCatalogRevision] = useState(0);
+  const [move, setMove] = useState<NoteMove | null>(null);
+  const [moveStatus, setMoveStatus] = useState('');
   const trash = view.kind === 'trash';
   const notebookId = view.kind === 'active' ? view.notebookId : undefined;
   const search = query.trim();
@@ -52,11 +54,26 @@ export function App() {
   }, [catalogRevision]);
 
   function selectView(next: NoteView) {
+    setMove(null);
+    setMoveStatus('');
     if (next.kind === view.kind && (next.kind === 'trash' || next.notebookId === notebookId)) return;
     editor.switchView(() => setView(next));
   }
 
-  const start = () => editor.start(notebookId);
+  const start = () => {
+    setMove(null);
+    editor.start(notebookId);
+  };
+
+  async function moveNote(notebook: Notebook) {
+    if (!move || notebook.id === move.note.notebookId || trash) return;
+    const sourceId = move.note.id;
+    setMove(null);
+    setMoveStatus('');
+    const success = await editor.changeOrganization(note => note.notebookId === notebook.id
+      ? Promise.resolve(note) : organizeNote(note, { notebookId: notebook.id }), false, sourceId);
+    if (success) setMoveStatus(`Заметка перенесена в «${notebook.name}».`);
+  }
 
   return (
     <div className="app-shell">
@@ -73,9 +90,11 @@ export function App() {
           <Icon name="plus" size={21} /> Новая заметка
         </button>
       </header>
+      {editor.organizationError && <div className="catalog-error" role="alert">{editor.organizationError}</div>}
 
       <main className="workspace">
         <NotebookSidebar notebooks={notebooks} view={view} disabled={editor.organizing} onSelect={selectView}
+          move={move} onMove={notebook => void moveNote(notebook)} cancelMove={() => setMove(null)} moveStatus={moveStatus}
           onCreated={notebook => {
             setNotebooks(current => [...current.filter(item => item.id !== notebook.id), notebook]);
             selectView({ kind: 'active', notebookId: notebook.id });
@@ -88,7 +107,10 @@ export function App() {
           currentNoteId={currentNoteId}
           onCreate={start}
           onReload={reload}
-          onSelect={editor.select}
+          onSelect={id => {
+            setMove(null);
+            editor.select(id);
+          }}
           trash={trash}
           query={query}
           onQuery={setQuery}
@@ -96,6 +118,18 @@ export function App() {
           onTag={setTagId}
           tags={tags}
           disabled={editor.organizing}
+          canDrag={!trash && notebooks.length > 1 && editor.state.status !== 'loading'}
+          onDragStart={(event, note) => {
+            if (trash || editor.organizing || notebooks.length < 2) {
+              event.preventDefault();
+              return;
+            }
+            event.dataTransfer.setData(noteDragType, note.id);
+            event.dataTransfer.effectAllowed = 'move';
+            setMoveStatus('');
+            setMove({ note, mode: 'drag' });
+          }}
+          onDragEnd={() => setMove(current => current?.mode === 'drag' ? null : current)}
         />
 
         <section className="editor-panel" aria-label="Редактор заметки">
@@ -109,10 +143,13 @@ export function App() {
             onReloadConflict={editor.reloadConflict}
             trashView={trash}
             organizing={editor.organizing}
-            organizationError={editor.organizationError}
             organization={selectedNote && <NoteOrganization key={selectedNote.id}
-              note={selectedNote} notebooks={notebooks} tags={tags}
+              note={selectedNote} tags={tags} canMove={notebooks.length > 1}
               disabled={editor.organizing || editor.state.status === 'conflict'}
+              onMove={() => {
+                setMoveStatus('');
+                setMove({ note: selectedNote, mode: 'choose' });
+              }}
               onChange={change => editor.changeOrganization(note => organizeNote(note, change))}
               onTrash={() => void editor.changeOrganization(note => setNoteInTrash(note, !note.deletedAt), true)} />}
           />

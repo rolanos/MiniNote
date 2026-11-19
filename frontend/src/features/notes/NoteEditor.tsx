@@ -14,13 +14,12 @@ interface NoteEditorProps {
   onRetryLoad: () => void;
   onReloadConflict: () => void;
   organization?: ReactNode;
-  organizationError?: string;
   organizing?: boolean;
   trashView?: boolean;
 }
 
 export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict,
-  organization, organizationError, organizing, trashView }: NoteEditorProps) {
+  organization, organizing, trashView }: NoteEditorProps) {
   const titleInput = useRef<HTMLInputElement>(null);
   const requestId = 'requestId' in state ? state.requestId : null;
 
@@ -74,7 +73,6 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
         <span className="editor-mode">{trashed ? 'Только просмотр' : 'Автосохранение'}</span>
       </div>
       {organization}
-      {organizationError && <p className="inline-error" role="alert">{organizationError}</p>}
       <fieldset className="note-fields" disabled={trashed || organizing}>
         <label className="visually-hidden" htmlFor="note-title">Заголовок</label>
         <input

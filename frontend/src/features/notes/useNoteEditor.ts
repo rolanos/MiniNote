@@ -171,26 +171,38 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
     commit({ ...latest, draft: update(latest.draft) });
   }
 
-  async function changeOrganization(update: (note: Note) => Promise<Note>, closeAfter = false) {
+  async function changeOrganization(update: (note: Note) => Promise<Note>, closeAfter = false, noteId?: string) {
     const initial = current.current;
-    if (mutation.current || !('draft' in initial) || !initial.note) return false;
+    const selectedNote = 'draft' in initial ? initial.note : null;
+    const targetId = noteId ?? selectedNote?.id;
+    if (mutation.current || !targetId) return false;
+    const isSelected = selectedNote?.id === targetId;
+    if (initial.status === 'loading' && initial.noteId === targetId) return false;
     mutation.current = true;
     ++navigationVersion.current;
     setOrganizing(true);
     setOrganizationError('');
     try {
-      if (!await flush()) return false;
-      const latest = current.current;
-      if (!('draft' in latest) || !latest.note) return false;
-      const saved = await update(latest.note);
+      let note: Note;
+      if (isSelected) {
+        if (!await flush()) return false;
+        const latest = current.current;
+        if (!('draft' in latest) || latest.note?.id !== targetId) return false;
+        note = latest.note;
+      } else {
+        note = await getNote(targetId);
+      }
+      const saved = await update(note);
       onSaved(saved);
-      commit(closeAfter ? { status: 'empty' } : {
-        status: 'ready', requestId: saved.id, note: saved, draft: toDraft(saved),
-      });
+      if (isSelected) {
+        commit(closeAfter ? { status: 'empty' } : {
+          status: 'ready', requestId: saved.id, note: saved, draft: toDraft(saved),
+        });
+      }
       return true;
     } catch (cause) {
       const latest = current.current;
-      if (cause instanceof ApiError && cause.status === 409 && 'draft' in latest)
+      if (isSelected && cause instanceof ApiError && cause.status === 409 && 'draft' in latest)
         commit({ ...latest, status: 'conflict', error: errorMessage(cause) });
       else
         setOrganizationError(errorMessage(cause));
