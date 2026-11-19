@@ -29,6 +29,55 @@ const noteCard = (page: Page, title: string) =>
 const view = (page: Page, name: string) =>
   page.getByRole('navigation', { name: 'Разделы заметок' }).getByRole('button', { name, exact: true });
 
+test('Ручной порядок блокнотов и заметок сохраняется после перезагрузки и редактирования', async ({ page, request }) => {
+  const run = randomUUID();
+  const source = await createNotebook(request, `А ${run}`);
+  const other = await createNotebook(request, `Б ${run}`);
+  const older = await createNote(request, 'Первая запись', source.id, `Первая запись ${run}`);
+  const hidden = await createNote(request, 'Запись другого блокнота', other.id, `Запись другого блокнота ${run}`);
+  const newer = await createNote(request, 'Вторая запись', source.id, `Вторая запись ${run}`);
+
+  await page.goto('/');
+  const nav = page.getByRole('navigation', { name: 'Разделы заметок' });
+  const notebookButtons = nav.getByRole('button').filter({ hasText: run });
+  await expect(notebookButtons).toHaveText([source.name, other.name]);
+  const origin = view(page, other.name);
+  const destination = view(page, source.name);
+  await origin.scrollIntoViewIfNeeded();
+  await destination.scrollIntoViewIfNeeded();
+  const from = (await origin.boundingBox())!;
+  const to = (await destination.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 14, to.y + 6, { steps: 10 });
+  await page.mouse.move(to.x + 16, to.y + 8);
+  await expect(destination).toHaveAttribute('data-reorder-edge', 'before');
+  await page.mouse.up();
+  await expect(notebookButtons).toHaveText([other.name, source.name]);
+  await expect(view(page, 'Все заметки')).toHaveAttribute('aria-current', 'page');
+
+  await view(page, source.name).click();
+  const titles = page.locator('.note-card h3');
+  await expect(titles).toHaveText([newer.title, older.title]);
+  await noteCard(page, newer.title).click();
+  await expect(page.getByLabel('Заголовок', { exact: true })).toHaveValue(newer.title);
+  await noteCard(page, newer.title).locator('h3').dragTo(noteCard(page, older.title).locator('time'));
+  await expect(titles).toHaveText([older.title, newer.title]);
+  await expect(page.getByLabel('Заголовок', { exact: true })).toHaveValue(newer.title);
+
+  const saved = page.waitForResponse(response => response.url().endsWith(`/api/notes/${newer.id}`)
+    && response.request().method() === 'PUT' && response.ok());
+  await page.getByLabel('Текст заметки').fill('Текст после перестановки');
+  await saved;
+  await expect(titles).toHaveText([older.title, newer.title]);
+
+  await page.reload();
+  await expect(notebookButtons).toHaveText([other.name, source.name]);
+  await expect(titles.filter({ hasText: run })).toHaveText([hidden.title, older.title, newer.title]);
+  await view(page, source.name).click();
+  await expect(titles).toHaveText([older.title, newer.title]);
+});
+
 test('US-07: создание в выбранном блокноте и перенос сохраняют введённый текст', async ({ page, request }) => {
   const source = await createNotebook(request);
   const original = await createNote(request, 'До переноса', source.id,

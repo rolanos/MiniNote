@@ -5,6 +5,7 @@ export interface NoteListItem {
   notebookId: string;
   notebookName: string;
   createdAt: string;
+  sortPosition: number | null;
 }
 
 export interface Note extends Omit<NoteListItem, 'preview'> {
@@ -54,7 +55,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const validation = problem?.errors ? Object.values(problem.errors).flat().join(' ') : undefined;
     throw new ApiError(response.status, validation || problem?.title || `Сервер вернул ошибку ${response.status}.`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export function reorderItem(list: 'notes' | 'notebooks', id: string, targetId: string, before: boolean): Promise<void> {
+  return request(`/api/${list}/${encodeURIComponent(id)}/position`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetId, before }),
+  });
 }
 
 export function listNotes(filter: NoteFilter, signal?: AbortSignal): Promise<NoteListItem[]> {

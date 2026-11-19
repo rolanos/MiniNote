@@ -49,6 +49,9 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("NotebookId")
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("SortPosition")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -76,6 +79,9 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("SortPosition")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 

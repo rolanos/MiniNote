@@ -573,9 +573,12 @@ test('API: валидация чек-листа, пустого заголовк
   expect((await request.get(`/api/notes/${randomUUID()}`)).status()).toBe(404);
   const schema = await (await request.get(`${process.env.E2E_API_URL || 'http://127.0.0.1:5080'}/openapi/v1.json`)).json();
   expect(Object.keys(schema.paths).sort()).toEqual([
-    '/api/notebooks', '/api/notes', '/api/notes/{id}', '/api/notes/{id}/organization',
-    '/api/notes/{id}/restore', '/api/notes/{id}/trash', '/api/tags',
+    '/api/notebooks', '/api/notebooks/{id}/position', '/api/notes', '/api/notes/{id}',
+    '/api/notes/{id}/organization', '/api/notes/{id}/position', '/api/notes/{id}/restore',
+    '/api/notes/{id}/trash', '/api/tags',
   ]);
   expect(Object.keys(schema.paths['/api/notes']).sort()).toEqual(['get', 'post']);
   expect(Object.keys(schema.paths['/api/notes/{id}']).sort()).toEqual(['get', 'put']);
+  expect(Object.keys(schema.paths['/api/notes/{id}/position'])).toEqual(['patch']);
+  expect(Object.keys(schema.paths['/api/notebooks/{id}/position'])).toEqual(['patch']);
 });

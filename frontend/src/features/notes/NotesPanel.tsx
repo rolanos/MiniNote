@@ -2,6 +2,7 @@ import { useRef, type DragEvent } from 'react';
 import type { NoteListItem, Tag } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 import { formatDate, formatNoteCount } from '../../utils/format';
+import { noteDragType, useReorderDrop, type Reorder } from './useReorderDrop';
 
 interface NotesPanelProps {
   notes: NoteListItem[];
@@ -19,20 +20,24 @@ interface NotesPanelProps {
   onTag: (id: string) => void;
   disabled: boolean;
   canDrag: boolean;
+  onReorder?: Reorder;
   onDragStart: (event: DragEvent<HTMLButtonElement>, note: NoteListItem) => void;
   onDragEnd: () => void;
 }
 
 export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onReload, onSelect,
-  trash, query, tagId, tags, onQuery, onTag, disabled, canDrag, onDragStart, onDragEnd }: NotesPanelProps) {
+  trash, query, tagId, tags, onQuery, onTag, disabled, canDrag, onReorder, onDragStart, onDragEnd }: NotesPanelProps) {
   const empty = notes.length === 0;
   const filtered = Boolean(query.trim() || tagId);
   const dragPreview = useRef<HTMLDivElement>(null);
   const dragPreviewTitle = useRef<HTMLSpanElement>(null);
+  const reorder = useReorderDrop(noteDragType, onReorder);
 
   function startDrag(event: DragEvent<HTMLButtonElement>, note: NoteListItem) {
     onDragStart(event, note);
-    if (event.defaultPrevented || !dragPreview.current || !dragPreviewTitle.current) return;
+    if (event.defaultPrevented) return;
+    reorder.start(note.id);
+    if (!dragPreview.current || !dragPreviewTitle.current) return;
     dragPreviewTitle.current.textContent = note.title;
     event.dataTransfer.setDragImage(dragPreview.current, 20, 21);
   }
@@ -81,7 +86,7 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
         {!empty && (
           <ul>
             {notes.map(note => (
-              <li key={note.id}>
+              <li key={note.id} {...reorder.dropProps(note.id)}>
                 <button
                   type="button"
                   className={`note-card ${note.id === currentNoteId ? 'is-current' : ''}`}
@@ -90,7 +95,7 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
                   disabled={disabled}
                   draggable={canDrag && !disabled}
                   onDragStart={event => startDrag(event, note)}
-                  onDragEnd={onDragEnd}
+                  onDragEnd={() => { reorder.clear(); onDragEnd(); }}
                   onClick={() => onSelect(note.id)}
                 >
                   <Icon name="note" size={25} />

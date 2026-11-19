@@ -10,6 +10,7 @@ public sealed class Notebook
 
     public Guid Id { get; private set; }
     public string Name { get; private set; } = string.Empty;
+    public int? SortPosition { get; private set; }
 
     private Notebook() { }
 

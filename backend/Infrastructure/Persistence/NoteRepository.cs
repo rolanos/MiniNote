@@ -26,14 +26,19 @@ public sealed class NoteRepository(NotesDbContext db) : INoteRepository
                 || EF.Functions.ILike(note.Content, pattern, "\\"));
         }
 
-        return await notes.OrderByDescending(note => note.CreatedAt)
-            .ThenByDescending(note => note.Id)
+        var ordered = filter.Trash ? notes.OrderByDescending(note => note.CreatedAt).ThenByDescending(note => note.Id)
+            : OrderNotes(notes);
+        return await ordered
             .Select(note => new NoteListItemResponse(
                 note.Id, note.Title,
                 note.Content.Length > 160 ? note.Content.Substring(0, 160) : note.Content,
-                note.NotebookId, note.Notebook.Name, note.CreatedAt))
+                note.NotebookId, note.Notebook.Name, note.CreatedAt, note.SortPosition))
             .ToListAsync(cancellationToken);
     }
+
+    private static IOrderedQueryable<Note> OrderNotes(IQueryable<Note> notes) =>
+        notes.OrderBy(note => note.SortPosition != null).ThenBy(note => note.SortPosition)
+            .ThenByDescending(note => note.CreatedAt).ThenByDescending(note => note.Id);
 
     public Task<Note?> FindAsync(Guid id, CancellationToken cancellationToken) =>
         WithOrganization().AsNoTracking().SingleOrDefaultAsync(note => note.Id == id, cancellationToken);
@@ -131,9 +136,53 @@ public sealed class NoteRepository(NotesDbContext db) : INoteRepository
     }
 
     public async Task<IReadOnlyList<NotebookResponse>> ListNotebooksAsync(CancellationToken cancellationToken) =>
-        await db.Notebooks.AsNoTracking().OrderByDescending(notebook => notebook.Id == Notebook.PersonalId)
-            .ThenBy(notebook => notebook.Name).ThenBy(notebook => notebook.Id)
+        await OrderedNotebooks()
             .Select(notebook => new NotebookResponse(notebook.Id, notebook.Name)).ToListAsync(cancellationToken);
+
+    private IOrderedQueryable<Notebook> OrderedNotebooks() =>
+        db.Notebooks.AsNoTracking().OrderBy(notebook => notebook.SortPosition == null).ThenBy(notebook => notebook.SortPosition)
+            .ThenByDescending(notebook => notebook.Id == Notebook.PersonalId)
+            .ThenBy(notebook => notebook.Name).ThenBy(notebook => notebook.Id);
+
+    public Task<bool> ReorderNoteAsync(Guid id, Guid targetId, bool before, CancellationToken cancellationToken) =>
+        ReorderAsync(id, targetId, before, OrderNotes(db.Notes.AsNoTracking())
+            .Select(note => new ReorderItem(note.Id, note.DeletedAt == null)),
+            "LOCK TABLE \"Notes\" IN SHARE ROW EXCLUSIVE MODE",
+            order => $"""
+                UPDATE "Notes" AS item SET "SortPosition" = ordered.position::int
+                FROM unnest({order}::uuid[]) WITH ORDINALITY AS ordered(id, position)
+                WHERE item."Id" = ordered.id AND item."SortPosition" IS DISTINCT FROM ordered.position::int
+                """, cancellationToken);
+
+    public Task<bool> ReorderNotebookAsync(Guid id, Guid targetId, bool before, CancellationToken cancellationToken) =>
+        ReorderAsync(id, targetId, before, OrderedNotebooks().Select(notebook => new ReorderItem(notebook.Id, true)),
+            "LOCK TABLE \"Notebooks\" IN SHARE ROW EXCLUSIVE MODE",
+            order => $"""
+                UPDATE "Notebooks" AS item SET "SortPosition" = ordered.position::int
+                FROM unnest({order}::uuid[]) WITH ORDINALITY AS ordered(id, position)
+                WHERE item."Id" = ordered.id AND item."SortPosition" IS DISTINCT FROM ordered.position::int
+                """, cancellationToken);
+
+    private sealed record ReorderItem(Guid Id, bool Active);
+
+    private Task<bool> ReorderAsync(Guid id, Guid targetId, bool before, IQueryable<ReorderItem> query,
+        string lockCommand, Func<Guid[], FormattableString> updateCommand, CancellationToken cancellationToken) =>
+        db.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
+        {
+            // Serialize changes from other tabs with the snapshot used to compute positions.
+            await using var transaction = await db.Database.BeginTransactionAsync(token);
+            await db.Database.ExecuteSqlRawAsync(lockCommand, token);
+            var items = await query.ToListAsync(token);
+            if (!items.Any(item => item.Id == id && item.Active) || !items.Any(item => item.Id == targetId && item.Active))
+                return false;
+
+            var order = items.Select(item => item.Id).Where(itemId => itemId != id).ToList();
+            var targetIndex = order.IndexOf(targetId);
+            order.Insert(before ? targetIndex : targetIndex + 1, id);
+            await db.Database.ExecuteSqlInterpolatedAsync(updateCommand(order.ToArray()), token);
+            await transaction.CommitAsync(token);
+            return true;
+        }, cancellationToken);
 
     public async Task AddNotebookAsync(Notebook notebook, CancellationToken cancellationToken)
     {

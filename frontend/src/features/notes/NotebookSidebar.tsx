@@ -2,16 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { createNotebook, type Notebook, type NoteListItem } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 import { errorMessage } from '../../utils/errors';
+import { noteDragType, notebookDragType, useReorderDrop, type Reorder } from './useReorderDrop';
 
 export type NoteView = { kind: 'active'; notebookId?: string } | { kind: 'trash' };
-export const noteDragType = 'application/x-mininote-note';
 export type NoteMove = {
   note: Pick<NoteListItem, 'id' | 'notebookId'>;
   mode: 'drag' | 'choose';
 };
 
 export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled,
-  move, onMove, cancelMove, moveStatus }: {
+  move, onMove, cancelMove, moveStatus, onReorder }: {
   notebooks: Notebook[];
   view: NoteView;
   onSelect: (view: NoteView) => void;
@@ -21,6 +21,7 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
   onMove: (notebook: Notebook) => void;
   cancelMove: () => void;
   moveStatus: string;
+  onReorder?: Reorder;
 }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -28,6 +29,8 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
   const [error, setError] = useState('');
   const [hovered, setHovered] = useState<string | null>(null);
   const sidebar = useRef<HTMLElement>(null);
+  const reorder = useReorderDrop(notebookDragType, onReorder);
+  const canDrag = Boolean(onReorder && !move && !disabled && notebooks.length > 1);
 
   useEffect(() => {
     setHovered(null);
@@ -65,26 +68,39 @@ export function NotebookSidebar({ notebooks, view, onSelect, onCreated, disabled
         </button>
         {notebooks.map(notebook => {
           const eligible = Boolean(move && move.note.notebookId !== notebook.id && !disabled);
+          const drop = reorder.dropProps(notebook.id);
           return (
             <button type="button" key={notebook.id} className="notebook-link"
               disabled={disabled || (move?.mode === 'choose' && !eligible)}
               data-move-target={eligible ? '' : undefined}
               data-drop-hover={eligible && hovered === notebook.id ? '' : undefined}
+              data-reorder-edge={drop['data-reorder-edge']}
               aria-current={view.kind === 'active' && view.notebookId === notebook.id ? 'page' : undefined}
+              draggable={canDrag}
+              onDragStart={event => {
+                if (!canDrag) { event.preventDefault(); return; }
+                event.dataTransfer.setData(notebookDragType, notebook.id);
+                event.dataTransfer.effectAllowed = 'move';
+                reorder.start(notebook.id);
+              }}
+              onDragEnd={reorder.clear}
               onClick={() => move?.mode === 'choose' ? onMove(notebook)
                 : onSelect({ kind: 'active', notebookId: notebook.id })}
               onDragOver={event => {
+                drop.onDragOver?.(event);
                 if (!eligible || move?.mode !== 'drag' || !event.dataTransfer.types.includes(noteDragType)) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
                 setHovered(notebook.id);
               }}
               onDragLeave={event => {
+                drop.onDragLeave?.(event);
                 const next = event.relatedTarget;
                 if (!(next instanceof Node) || !event.currentTarget.contains(next))
                   setHovered(current => current === notebook.id ? null : current);
               }}
               onDrop={event => {
+                drop.onDrop?.(event);
                 if (!eligible || move?.mode !== 'drag' || event.dataTransfer.getData(noteDragType) !== move.note.id) return;
                 event.preventDefault();
                 onMove(notebook);

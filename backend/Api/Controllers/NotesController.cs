@@ -47,6 +47,10 @@ public sealed class NotesController(INoteService notes) : ControllerBase
         return note is null ? NoteNotFound() : Ok(note);
     }
 
+    [HttpPatch("{id:guid}/position")]
+    public async Task<IActionResult> Reorder(Guid id, ReorderRequest request, CancellationToken cancellationToken) =>
+        await notes.ReorderNoteAsync(id, request, cancellationToken) ? NoContent() : NoteNotFound();
+
     [HttpPost("{id:guid}/trash")]
     public Task<ActionResult<NoteResponse>> Trash(Guid id, ChangeTrashRequest request, CancellationToken cancellationToken) =>
         SetDeleted(id, request, true, cancellationToken);

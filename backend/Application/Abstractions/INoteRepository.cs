@@ -12,6 +12,8 @@ public interface INoteRepository
         CancellationToken cancellationToken);
     Task<Note?> SetDeletedAsync(Guid id, long version, DateTime? deletedAt, CancellationToken cancellationToken);
     Task<IReadOnlyList<NotebookResponse>> ListNotebooksAsync(CancellationToken cancellationToken);
+    Task<bool> ReorderNoteAsync(Guid id, Guid targetId, bool before, CancellationToken cancellationToken);
+    Task<bool> ReorderNotebookAsync(Guid id, Guid targetId, bool before, CancellationToken cancellationToken);
     Task AddNotebookAsync(Notebook notebook, CancellationToken cancellationToken);
     Task<IReadOnlyList<TagResponse>> ListTagsAsync(CancellationToken cancellationToken);
     // Returns the existing note when the same creation request is retried.

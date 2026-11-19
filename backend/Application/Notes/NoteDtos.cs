@@ -13,12 +13,13 @@ public sealed record ChangeOrganizationRequest(long? Version, Guid? NotebookId =
     Guid? TagId = null, string? TagName = null, Guid? RemoveTagId = null);
 public sealed record ChangeTrashRequest(long? Version);
 public sealed record CreateNotebookRequest(string? Name);
+public sealed record ReorderRequest(Guid TargetId, bool? Before);
 public sealed record NotebookResponse(Guid Id, string Name);
 public sealed record TagResponse(Guid Id, string Name);
 
 public sealed record NoteResponse(
     Guid Id, string Title, string Content, Guid NotebookId, string NotebookName, DateTime CreatedAt, long Version,
-    DateTime? DeletedAt, IReadOnlyList<TagResponse> Tags);
+    DateTime? DeletedAt, IReadOnlyList<TagResponse> Tags, int? SortPosition);
 
 public sealed record NoteListItemResponse(
-    Guid Id, string Title, string Preview, Guid NotebookId, string NotebookName, DateTime CreatedAt);
+    Guid Id, string Title, string Preview, Guid NotebookId, string NotebookName, DateTime CreatedAt, int? SortPosition);

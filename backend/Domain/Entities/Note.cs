@@ -14,6 +14,7 @@ public sealed class Note
     public Guid NotebookId { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? DeletedAt { get; private set; }
+    public int? SortPosition { get; private set; }
     public long Version { get; private set; }
     public string? CreationFingerprint { get; private set; }
     public string? LastUpdateFingerprint { get; private set; }

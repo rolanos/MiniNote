@@ -45,8 +45,10 @@ export function useNotes(filter: NoteFilter) {
         notes.push({
           id: note.id, title: note.title, notebookId: note.notebookId, notebookName: note.notebookName,
           preview: Array.from(note.content.slice(0, 320)).slice(0, 160).join(''), createdAt: note.createdAt,
+          sortPosition: current.notes.find(existing => existing.id === note.id)?.sortPosition ?? note.sortPosition,
         });
-        notes.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+        notes.sort((a, b) => (filter.trash ? 0 : (a.sortPosition ?? 0) - (b.sortPosition ?? 0))
+          || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
       }
       return { ...current, notes };
     });

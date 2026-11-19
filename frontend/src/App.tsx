@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listNotebooks, listTags, organizeNote, setNoteInTrash, type Note, type Notebook, type Tag } from './api/notes';
+import { listNotebooks, listTags, organizeNote, reorderItem, setNoteInTrash, type Note, type Notebook, type Tag } from './api/notes';
 import { Icon } from './components/Icon';
 import { NoteEditor } from './features/notes/NoteEditor';
 import { NoteOrganization } from './features/notes/NoteOrganization';
-import { NotebookSidebar, noteDragType, type NoteMove, type NoteView } from './features/notes/NotebookSidebar';
+import { NotebookSidebar, type NoteMove, type NoteView } from './features/notes/NotebookSidebar';
 import { NotesPanel } from './features/notes/NotesPanel';
 import { useNoteEditor } from './features/notes/useNoteEditor';
 import { useNotes } from './features/notes/useNotes';
+import { noteDragType } from './features/notes/useReorderDrop';
 import { UnsavedChangesDialog } from './features/notes/UnsavedChangesDialog';
 import { errorMessage } from './utils/errors';
 
@@ -20,6 +21,8 @@ export function App() {
   const [catalogRevision, setCatalogRevision] = useState(0);
   const [move, setMove] = useState<NoteMove | null>(null);
   const [moveStatus, setMoveStatus] = useState('');
+  const [reordering, setReordering] = useState(false);
+  const [reorderError, setReorderError] = useState('');
   const trash = view.kind === 'trash';
   const notebookId = view.kind === 'active' ? view.notebookId : undefined;
   const search = query.trim();
@@ -37,6 +40,9 @@ export function App() {
   const selectedNote = 'note' in editor.state ? editor.state.note : null;
   const currentNoteId = 'noteId' in editor.state ? editor.state.noteId : selectedNote?.id;
   const announcement = selectedNote ? `Открыта заметка «${selectedNote.title}».` : '';
+  const canReorderNotes = !trash && !error && !editor.organizing && !reordering && notes.length > 1;
+  const canDragNote = !trash && !editor.organizing && !reordering && editor.state.status !== 'loading'
+    && (canReorderNotes || notebooks.length > 1);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,6 +81,20 @@ export function App() {
     if (success) setMoveStatus(`Заметка перенесена в «${notebook.name}».`);
   }
 
+  async function reorder(list: 'notes' | 'notebooks', id: string, targetId: string, before: boolean) {
+    setReordering(true);
+    setReorderError('');
+    try {
+      await reorderItem(list, id, targetId, before);
+    } catch (cause) {
+      setReorderError(`Не удалось сохранить порядок. ${errorMessage(cause)}`);
+    } finally {
+      if (list === 'notes') reload();
+      else setCatalogRevision(current => current + 1);
+      setReordering(false);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -91,10 +111,12 @@ export function App() {
         </button>
       </header>
       {editor.organizationError && <div className="catalog-error" role="alert">{editor.organizationError}</div>}
+      {reorderError && <div className="catalog-error" role="alert">{reorderError}</div>}
 
       <main className="workspace">
         <NotebookSidebar notebooks={notebooks} view={view} disabled={editor.organizing} onSelect={selectView}
           move={move} onMove={notebook => void moveNote(notebook)} cancelMove={() => setMove(null)} moveStatus={moveStatus}
+          onReorder={!reordering ? (id, targetId, before) => void reorder('notebooks', id, targetId, before) : undefined}
           onCreated={notebook => {
             setNotebooks(current => [...current.filter(item => item.id !== notebook.id), notebook]);
             selectView({ kind: 'active', notebookId: notebook.id });
@@ -118,9 +140,10 @@ export function App() {
           onTag={setTagId}
           tags={tags}
           disabled={editor.organizing}
-          canDrag={!trash && notebooks.length > 1 && editor.state.status !== 'loading'}
+          canDrag={canDragNote}
+          onReorder={canReorderNotes ? (id, targetId, before) => void reorder('notes', id, targetId, before) : undefined}
           onDragStart={(event, note) => {
-            if (trash || editor.organizing || notebooks.length < 2) {
+            if (!canDragNote) {
               event.preventDefault();
               return;
             }

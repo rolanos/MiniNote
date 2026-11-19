@@ -84,6 +84,12 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
     public Task<IReadOnlyList<NotebookResponse>> ListNotebooksAsync(CancellationToken cancellationToken) =>
         repository.ListNotebooksAsync(cancellationToken);
 
+    public Task<bool> ReorderNoteAsync(Guid id, ReorderRequest request, CancellationToken cancellationToken) =>
+        repository.ReorderNoteAsync(id, request.TargetId, RequirePlacement(id, request), cancellationToken);
+
+    public Task<bool> ReorderNotebookAsync(Guid id, ReorderRequest request, CancellationToken cancellationToken) =>
+        repository.ReorderNotebookAsync(id, request.TargetId, RequirePlacement(id, request), cancellationToken);
+
     public async Task<NotebookResponse> CreateNotebookAsync(CreateNotebookRequest request, CancellationToken cancellationToken)
     {
         var notebook = Notebook.Create(request.Name);
@@ -96,7 +102,15 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
 
     private static NoteResponse ToResponse(Note note) => new(
         note.Id, note.Title, note.Content, note.NotebookId, note.Notebook.Name, note.CreatedAt, note.Version,
-        note.DeletedAt, note.Tags.OrderBy(tag => tag.Name).Select(tag => new TagResponse(tag.Id, tag.Name)).ToArray());
+        note.DeletedAt, note.Tags.OrderBy(tag => tag.Name).Select(tag => new TagResponse(tag.Id, tag.Name)).ToArray(),
+        note.SortPosition);
+
+    private static bool RequirePlacement(Guid id, ReorderRequest request)
+    {
+        if (request.TargetId == Guid.Empty || request.TargetId == id)
+            throw new DomainValidationException("targetId", "Выберите соседний элемент для перестановки.");
+        return request.Before ?? throw new DomainValidationException("before", "Укажите сторону вставки.");
+    }
 
     private static long RequireVersion(long? version) =>
         version is >= 0 ? version.Value
