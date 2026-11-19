@@ -43,9 +43,12 @@ test('US-01: новая пустая заметка сразу появляет�
 });
 
 test('US-02: пустой список объясняет состояние и позволяет создать заметку', async ({ page }) => {
+  let initial = true;
   await page.route('**/api/notes', async route => {
-    if (route.request().method() === 'GET') await route.fulfill({ json: [] });
-    else await route.continue();
+    if (initial && route.request().method() === 'GET') {
+      initial = false;
+      await route.fulfill({ json: [] });
+    } else await route.continue();
   });
   await page.goto('/');
   await expect(page.getByText('Здесь будут ваши заметки')).toBeVisible();
@@ -569,7 +572,10 @@ test('API: валидация чек-листа, пустого заголовк
   expect((await request.put(`/api/notes/${first.id}`, { data: { title: 'а'.repeat(201), version: updated.version } })).status()).toBe(400);
   expect((await request.get(`/api/notes/${randomUUID()}`)).status()).toBe(404);
   const schema = await (await request.get(`${process.env.E2E_API_URL || 'http://127.0.0.1:5080'}/openapi/v1.json`)).json();
-  expect(Object.keys(schema.paths).sort()).toEqual(['/api/notes', '/api/notes/{id}']);
+  expect(Object.keys(schema.paths).sort()).toEqual([
+    '/api/notebooks', '/api/notes', '/api/notes/{id}', '/api/notes/{id}/organization',
+    '/api/notes/{id}/restore', '/api/notes/{id}/trash', '/api/tags',
+  ]);
   expect(Object.keys(schema.paths['/api/notes']).sort()).toEqual(['get', 'post']);
   expect(Object.keys(schema.paths['/api/notes/{id}']).sort()).toEqual(['get', 'put']);
 });

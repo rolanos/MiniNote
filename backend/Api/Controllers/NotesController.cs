@@ -8,11 +8,12 @@ namespace MiniNote.Api.Controllers;
 [Produces("application/json")]
 public sealed class NotesController(INoteService notes) : ControllerBase
 {
-    /// <summary>Список созданных заметок, начиная с новых.</summary>
+    /// <summary>Список заметок с учётом поиска, фильтров или режима корзины.</summary>
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<NoteListItemResponse>>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<NoteListItemResponse>>> List(CancellationToken cancellationToken) =>
-        Ok(await notes.ListAsync(cancellationToken));
+    public async Task<ActionResult<IReadOnlyList<NoteListItemResponse>>> List(
+        [FromQuery] NoteFilter filter, CancellationToken cancellationToken) =>
+        Ok(await notes.ListAsync(filter, cancellationToken));
 
     /// <summary>Открыть заголовок, полный текст и чек-лист заметки.</summary>
     [HttpGet("{id:guid}")]
@@ -38,12 +39,35 @@ public sealed class NotesController(INoteService notes) : ControllerBase
         return note is null ? NoteNotFound() : Ok(note);
     }
 
+    [HttpPatch("{id:guid}/organization")]
+    public async Task<ActionResult<NoteResponse>> Organize(
+        Guid id, ChangeOrganizationRequest request, CancellationToken cancellationToken)
+    {
+        var note = await notes.OrganizeAsync(id, request, cancellationToken);
+        return note is null ? NoteNotFound() : Ok(note);
+    }
+
+    [HttpPost("{id:guid}/trash")]
+    public Task<ActionResult<NoteResponse>> Trash(Guid id, ChangeTrashRequest request, CancellationToken cancellationToken) =>
+        SetDeleted(id, request, true, cancellationToken);
+
+    [HttpPost("{id:guid}/restore")]
+    public Task<ActionResult<NoteResponse>> Restore(Guid id, ChangeTrashRequest request, CancellationToken cancellationToken) =>
+        SetDeleted(id, request, false, cancellationToken);
+
+    private async Task<ActionResult<NoteResponse>> SetDeleted(
+        Guid id, ChangeTrashRequest request, bool deleted, CancellationToken cancellationToken)
+    {
+        var note = await notes.SetDeletedAsync(id, request, deleted, cancellationToken);
+        return note is null ? NoteNotFound() : Ok(note);
+    }
+
     private NotFoundObjectResult NoteNotFound() => NotFound(new ProblemDetails
     {
         Status = StatusCodes.Status404NotFound, Title = "Заметка не найдена."
     });
 
-    /// <summary>Создать заметку в блокноте «Личное». Заголовок и текст могут быть пустыми.</summary>
+    /// <summary>Создать заметку в выбранном блокноте или в блокноте «Личное».</summary>
     /// <remarks>Необязательный Idempotency-Key (UUID) позволяет безопасно повторить запрос после ошибки сети.</remarks>
     [HttpPost]
     [ProducesResponseType<NoteResponse>(StatusCodes.Status201Created)]

@@ -13,21 +13,23 @@ public sealed class Note
     public string Content { get; private set; } = string.Empty;
     public Guid NotebookId { get; private set; }
     public DateTime CreatedAt { get; private set; }
+    public DateTime? DeletedAt { get; private set; }
     public long Version { get; private set; }
     public string? CreationFingerprint { get; private set; }
     public string? LastUpdateFingerprint { get; private set; }
     public Notebook Notebook { get; private set; } = null!;
+    public List<Tag> Tags { get; } = [];
 
     private Note() { }
 
-    public static Note Create(Guid id, string? title, string? content, DateTime utcNow)
+    public static Note Create(Guid id, string? title, string? content, DateTime utcNow, Guid notebookId)
     {
         if (id == Guid.Empty)
             throw new DomainValidationException("id", "Идентификатор запроса не может быть пустым.");
         var note = new Note
         {
             Id = id,
-            NotebookId = global::MiniNote.Domain.Entities.Notebook.PersonalId,
+            NotebookId = notebookId,
             CreatedAt = DateTime.SpecifyKind(utcNow, DateTimeKind.Utc)
         };
         note.UpdateContent(title, content);
@@ -47,7 +49,15 @@ public sealed class Note
 
     public void RememberCreationFingerprint(string? fingerprint) => CreationFingerprint ??= fingerprint;
 
-    public void RecordSave(string updateFingerprint)
+    public void MoveTo(Notebook notebook)
+    {
+        Notebook = notebook;
+        NotebookId = notebook.Id;
+    }
+
+    public void SetDeletedAt(DateTime? utcDate) => DeletedAt = utcDate;
+
+    public void RecordSave(string? updateFingerprint)
     {
         Version++;
         LastUpdateFingerprint = updateFingerprint;

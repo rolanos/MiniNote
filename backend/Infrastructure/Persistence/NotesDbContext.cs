@@ -7,6 +7,7 @@ public sealed class NotesDbContext(DbContextOptions<NotesDbContext> options) : D
 {
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<Notebook> Notebooks => Set<Notebook>();
+    public DbSet<Tag> Tags => Set<Tag>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

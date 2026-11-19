@@ -8,8 +8,8 @@ namespace MiniNote.Application.Notes;
 
 public sealed class NoteService(INoteRepository repository, TimeProvider timeProvider) : INoteService
 {
-    public Task<IReadOnlyList<NoteListItemResponse>> ListAsync(CancellationToken cancellationToken) =>
-        repository.ListAsync(cancellationToken);
+    public Task<IReadOnlyList<NoteListItemResponse>> ListAsync(NoteFilter filter, CancellationToken cancellationToken) =>
+        repository.ListAsync(filter, cancellationToken);
 
     public async Task<NoteResponse?> GetAsync(Guid id, CancellationToken cancellationToken)
     {
@@ -23,10 +23,11 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
         if (note is null)
             return null;
 
-        if (request.Version is null or < 0)
-            throw new DomainValidationException("version", "Укажите версию заметки из последнего ответа сервера.");
+        var version = RequireVersion(request.Version);
+        if (note.DeletedAt is not null)
+            throw new NoteVersionConflictException();
 
-        var stale = note.Version != request.Version;
+        var stale = note.Version != version;
         var saved = stale ? ToResponse(note) : null;
         var previousFingerprint = stale || note.CreationFingerprint is null ? ContentFingerprint(note) : null;
         var items = InlineTasks.NormalizeLegacy(request.Checklist);
@@ -36,7 +37,7 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
         {
             // The saved title may have acquired a suffix when this request was first applied.
             if (previousFingerprint == updateFingerprint
-                || (request.Version == saved.Version - 1 && note.LastUpdateFingerprint == updateFingerprint))
+                || (version == saved.Version - 1 && note.LastUpdateFingerprint == updateFingerprint))
                 return saved;
             throw new NoteVersionConflictException();
         }
@@ -48,9 +49,12 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
     public async Task<(NoteResponse Note, bool Created)> CreateAsync(
         CreateNoteRequest request, Guid requestId, CancellationToken cancellationToken)
     {
-        var candidate = Note.Create(requestId, request.Title, request.Content, timeProvider.GetUtcNow().UtcDateTime);
+        var notebookId = request.NotebookId ?? Notebook.PersonalId;
+        var candidate = Note.Create(requestId, request.Title, request.Content, timeProvider.GetUtcNow().UtcDateTime, notebookId);
         var items = InlineTasks.NormalizeLegacy(request.Checklist);
         var fingerprint = ContentFingerprint(candidate, items);
+        if (notebookId != Notebook.PersonalId)
+            fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { fingerprint, notebookId })));
         candidate.RememberCreationFingerprint(fingerprint);
         candidate.UpdateContent(candidate.Title, InlineTasks.Append(candidate.Content, items));
         var (saved, created) = await repository.AddOrGetAsync(candidate, cancellationToken);
@@ -60,8 +64,43 @@ public sealed class NoteService(INoteRepository repository, TimeProvider timePro
         return (ToResponse(saved), created);
     }
 
+    public async Task<NoteResponse?> OrganizeAsync(Guid id, ChangeOrganizationRequest request, CancellationToken cancellationToken)
+    {
+        var version = RequireVersion(request.Version);
+        if (request.TagId.HasValue && request.TagName is not null)
+            throw new DomainValidationException("tagName", "Выберите существующий тег или введите новый.");
+        var newTag = request.TagName is null ? null : Tag.Create(request.TagName);
+        var note = await repository.OrganizeAsync(id, version, request, newTag, cancellationToken);
+        return note is null ? null : ToResponse(note);
+    }
+
+    public async Task<NoteResponse?> SetDeletedAsync(Guid id, ChangeTrashRequest request, bool deleted, CancellationToken cancellationToken)
+    {
+        var deletedAt = deleted ? timeProvider.GetUtcNow().UtcDateTime : (DateTime?)null;
+        var note = await repository.SetDeletedAsync(id, RequireVersion(request.Version), deletedAt, cancellationToken);
+        return note is null ? null : ToResponse(note);
+    }
+
+    public Task<IReadOnlyList<NotebookResponse>> ListNotebooksAsync(CancellationToken cancellationToken) =>
+        repository.ListNotebooksAsync(cancellationToken);
+
+    public async Task<NotebookResponse> CreateNotebookAsync(CreateNotebookRequest request, CancellationToken cancellationToken)
+    {
+        var notebook = Notebook.Create(request.Name);
+        await repository.AddNotebookAsync(notebook, cancellationToken);
+        return new NotebookResponse(notebook.Id, notebook.Name);
+    }
+
+    public Task<IReadOnlyList<TagResponse>> ListTagsAsync(CancellationToken cancellationToken) =>
+        repository.ListTagsAsync(cancellationToken);
+
     private static NoteResponse ToResponse(Note note) => new(
-        note.Id, note.Title, note.Content, note.NotebookId, Notebook.PersonalName, note.CreatedAt, note.Version);
+        note.Id, note.Title, note.Content, note.NotebookId, note.Notebook.Name, note.CreatedAt, note.Version,
+        note.DeletedAt, note.Tags.OrderBy(tag => tag.Name).Select(tag => new TagResponse(tag.Id, tag.Name)).ToArray());
+
+    private static long RequireVersion(long? version) =>
+        version is >= 0 ? version.Value
+            : throw new DomainValidationException("version", "Укажите версию заметки из последнего ответа сервера.");
 
     private static string ContentFingerprint(Note note, IReadOnlyList<ChecklistItemRequest>? legacyChecklist = null)
     {

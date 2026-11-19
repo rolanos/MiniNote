@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { Icon } from '../../components/Icon';
 import { formatDate } from '../../utils/format';
 import { hasDraftChanges, type EditorState } from './useNoteEditor';
@@ -12,9 +13,14 @@ interface NoteEditorProps {
   onSubmit: () => Promise<boolean>;
   onRetryLoad: () => void;
   onReloadConflict: () => void;
+  organization?: ReactNode;
+  organizationError?: string;
+  organizing?: boolean;
+  trashView?: boolean;
 }
 
-export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict }: NoteEditorProps) {
+export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict,
+  organization, organizationError, organizing, trashView }: NoteEditorProps) {
   const titleInput = useRef<HTMLInputElement>(null);
   const requestId = 'requestId' in state ? state.requestId : null;
 
@@ -23,6 +29,7 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
   }, [requestId]);
 
   if (state.status === 'empty') {
+    if (trashView) return <div className="editor-message">Выберите заметку, чтобы просмотреть или восстановить её.</div>;
     return (
       <div className="welcome">
         <div className="welcome-art"><img src="/notebook.png" alt="Мятный блокнот с карандашом" /></div>
@@ -34,7 +41,6 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
           {hasNotes ? 'Создать заметку' : 'Создать первую заметку'}
           <Icon name="arrow" size={18} />
         </button>
-        <span className="welcome-hint">Все заметки — в блокноте «Личное»</span>
       </div>
     );
   }
@@ -56,18 +62,22 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
   const saving = state.status === 'saving';
   const failed = state.status === 'failed';
   const conflict = state.status === 'conflict';
-  const saved = Boolean(savedNote) && !dirty && !saving && !failed && !conflict;
+  const trashed = Boolean(savedNote?.deletedAt);
+  const saved = Boolean(savedNote) && !dirty && !saving && !failed && !conflict && !trashed;
   const hint = saving ? 'Сохраняем на сервере…'
     : failed || conflict ? 'Не удалось сохранить изменения' : 'Ожидание автосохранения…';
 
   return (
     <form className="note-form" onSubmit={event => event.preventDefault()}>
       <div className="editor-toolbar">
-        <span className="notebook-pill"><Icon name="book" size={20} />Личное</span>
-        <span className="editor-mode">Автосохранение</span>
+        <span className="notebook-pill"><Icon name="book" size={20} />{savedNote?.notebookName ?? 'Личное'}</span>
+        <span className="editor-mode">{trashed ? 'Только просмотр' : 'Автосохранение'}</span>
       </div>
-      <label className="visually-hidden" htmlFor="note-title">Заголовок</label>
-      <input
+      {organization}
+      {organizationError && <p className="inline-error" role="alert">{organizationError}</p>}
+      <fieldset className="note-fields" disabled={trashed || organizing}>
+        <label className="visually-hidden" htmlFor="note-title">Заголовок</label>
+        <input
         ref={titleInput}
         id="note-title"
         className="title-input"
@@ -77,11 +87,12 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
         onChange={event => onChange('title', event.target.value)}
         maxLength={200}
         autoComplete="off"
-      />
-      <div className="editor-divider" />
-      <NoteBody key={requestId} content={values.content}
-        placeholder={savedNote ? 'В этой заметке нет текста.' : 'Начните писать здесь…'}
-        onChange={content => onChange('content', content)} />
+        />
+        <div className="editor-divider" />
+        <NoteBody key={requestId} content={values.content}
+          placeholder={savedNote ? 'В этой заметке нет текста.' : 'Начните писать здесь…'}
+          onChange={content => onChange('content', content)} />
+      </fieldset>
       {state.status === 'failed' && (
         <div className="save-error" role="alert">
           <Icon name="alert" size={21} />
@@ -110,7 +121,7 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
               {savedNote && <time dateTime={savedNote.createdAt}>{formatDate(savedNote.createdAt)}</time>}
             </>
           ) : (
-            <span className="draft-hint">{hint}</span>
+            <span className="draft-hint">{organizing ? 'Применяем изменения…' : trashed ? 'Заметка в корзине' : hint}</span>
           )}
         </div>
         {saving && <span className="spinner" aria-hidden="true" />}

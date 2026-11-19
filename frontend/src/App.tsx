@@ -1,16 +1,62 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { listNotebooks, listTags, organizeNote, setNoteInTrash, type Note, type Notebook, type Tag } from './api/notes';
 import { Icon } from './components/Icon';
 import { NoteEditor } from './features/notes/NoteEditor';
+import { NoteOrganization } from './features/notes/NoteOrganization';
+import { NotebookSidebar, type NoteView } from './features/notes/NotebookSidebar';
 import { NotesPanel } from './features/notes/NotesPanel';
 import { useNoteEditor } from './features/notes/useNoteEditor';
 import { useNotes } from './features/notes/useNotes';
 import { UnsavedChangesDialog } from './features/notes/UnsavedChangesDialog';
+import { errorMessage } from './utils/errors';
 
 export function App() {
-  const { notes, loading, error, upsert, reload } = useNotes();
-  const editor = useNoteEditor(upsert);
+  const [view, setView] = useState<NoteView>({ kind: 'active' });
+  const [query, setQuery] = useState('');
+  const [tagId, setTagId] = useState('');
+  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [catalogError, setCatalogError] = useState('');
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const trash = view.kind === 'trash';
+  const notebookId = view.kind === 'active' ? view.notebookId : undefined;
+  const search = query.trim();
+  const filter = useMemo(() => trash ? { trash: true } : { notebookId, tagId, query: search },
+    [trash, notebookId, tagId, search]);
+  const { notes, loading, error, upsert, reload } = useNotes(filter);
+  const onSaved = useCallback((note: Note) => {
+    upsert(note);
+    if (note.tags.length) setTags(current => {
+      const all = new Map([...current, ...note.tags].map(tag => [tag.id, tag]));
+      return Array.from(all.values()).sort((a, b) => a.name.localeCompare(b.name));
+    });
+  }, [upsert]);
+  const editor = useNoteEditor(onSaved);
   const selectedNote = 'note' in editor.state ? editor.state.note : null;
   const currentNoteId = 'noteId' in editor.state ? editor.state.noteId : selectedNote?.id;
   const announcement = selectedNote ? `Открыта заметка «${selectedNote.title}».` : '';
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCatalogError('');
+    Promise.all([listNotebooks(controller.signal), listTags(controller.signal)])
+      .then(([nextNotebooks, nextTags]) => {
+        if (controller.signal.aborted) return;
+        setNotebooks(current => Array.from(new Map([...nextNotebooks, ...current].map(item => [item.id, item])).values()));
+        setTags(current => Array.from(new Map([...nextTags, ...current].map(item => [item.id, item])).values()));
+      })
+      .catch(cause => {
+        if (!controller.signal.aborted) setCatalogError(errorMessage(cause));
+      });
+    return () => controller.abort();
+  }, [catalogRevision]);
+
+  function selectView(next: NoteView) {
+    if (next.kind === view.kind && (next.kind === 'trash' || next.notebookId === notebookId)) return;
+    editor.switchView(() => setView(next));
+  }
+
+  const start = () => editor.start(notebookId);
 
   return (
     <div className="app-shell">
@@ -21,45 +67,63 @@ export function App() {
         </a>
         <button
           className="button button-primary new-note"
-          onClick={editor.start}
-          disabled={editor.state.status === 'saving' && !editor.state.note}
+          onClick={start}
+          disabled={trash || editor.organizing || (editor.state.status === 'saving' && !editor.state.note)}
         >
           <Icon name="plus" size={21} /> Новая заметка
         </button>
       </header>
 
       <main className="workspace">
-        <aside className="sidebar" aria-label="Блокноты">
-          <h2 className="section-title"><Icon name="notebooks" />Блокноты</h2>
-          <div className="notebook-selected" aria-current="true">
-            <Icon name="book" /><span>Личное</span>
-            <span className="notebook-count">{loading || error ? '—' : notes.length}</span>
-          </div>
-          <div className="sidebar-footer"><span className="small-brand-mark" />Место для ваших мыслей</div>
-        </aside>
+        <NotebookSidebar notebooks={notebooks} view={view} disabled={editor.organizing} onSelect={selectView}
+          onCreated={notebook => {
+            setNotebooks(current => [...current.filter(item => item.id !== notebook.id), notebook]);
+            selectView({ kind: 'active', notebookId: notebook.id });
+          }} />
 
         <NotesPanel
           notes={notes}
           loading={loading}
           error={error}
           currentNoteId={currentNoteId}
-          onCreate={editor.start}
+          onCreate={start}
           onReload={reload}
           onSelect={editor.select}
+          trash={trash}
+          query={query}
+          onQuery={setQuery}
+          tagId={tagId}
+          onTag={setTagId}
+          tags={tags}
+          disabled={editor.organizing}
         />
 
         <section className="editor-panel" aria-label="Редактор заметки">
           <NoteEditor
             state={editor.state}
             hasNotes={notes.length > 0}
-            onStart={editor.start}
+            onStart={start}
             onChange={editor.change}
             onSubmit={editor.submit}
             onRetryLoad={() => currentNoteId && editor.select(currentNoteId)}
             onReloadConflict={editor.reloadConflict}
+            trashView={trash}
+            organizing={editor.organizing}
+            organizationError={editor.organizationError}
+            organization={selectedNote && <NoteOrganization key={selectedNote.id}
+              note={selectedNote} notebooks={notebooks} tags={tags}
+              disabled={editor.organizing || editor.state.status === 'conflict'}
+              onChange={change => editor.changeOrganization(note => organizeNote(note, change))}
+              onTrash={() => void editor.changeOrganization(note => setNoteInTrash(note, !note.deletedAt), true)} />}
           />
         </section>
       </main>
+      {catalogError && <div className="catalog-error" role="alert">
+        <span>{catalogError}</span>
+        <button type="button" className="text-button" onClick={() => setCatalogRevision(current => current + 1)}>
+          Повторить загрузку блокнотов и тегов
+        </button>
+      </div>}
       {editor.pendingDestination && <UnsavedChangesDialog
         onSave={editor.state.status === 'conflict' ? undefined : editor.saveAndNavigate}
         onDiscard={editor.discardAndNavigate}

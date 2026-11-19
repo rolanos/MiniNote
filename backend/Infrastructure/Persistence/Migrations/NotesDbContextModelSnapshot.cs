@@ -39,6 +39,9 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("LastUpdateFingerprint")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -86,6 +89,44 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("MiniNote.Domain.Entities.Tag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("Tags");
+                });
+
+            modelBuilder.Entity("NoteTags", b =>
+                {
+                    b.Property<Guid>("NoteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TagsId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("NoteId", "TagsId");
+
+                    b.HasIndex("TagsId");
+
+                    b.ToTable("NoteTags");
+                });
+
             modelBuilder.Entity("MiniNote.Domain.Entities.Note", b =>
                 {
                     b.HasOne("MiniNote.Domain.Entities.Notebook", "Notebook")
@@ -95,6 +136,21 @@ namespace MiniNote.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Notebook");
+                });
+
+            modelBuilder.Entity("NoteTags", b =>
+                {
+                    b.HasOne("MiniNote.Domain.Entities.Note", null)
+                        .WithMany()
+                        .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MiniNote.Domain.Entities.Tag", null)
+                        .WithMany()
+                        .HasForeignKey("TagsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

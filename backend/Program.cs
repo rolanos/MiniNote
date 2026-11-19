@@ -28,7 +28,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 app.MapOpenApi();
 app.UseSwaggerUI(options =>
 {
-    options.SwaggerEndpoint("/openapi/v1.json", "MiniNote API v1 — US-01–04, US-10");
+    options.SwaggerEndpoint("/openapi/v1.json", "MiniNote API v1");
     options.DocumentTitle = "MiniNote — Swagger";
 });
 app.MapControllers();

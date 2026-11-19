@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError, createNote, getNote, updateNote, type Note, type NoteDraft } from '../../api/notes';
 import { errorMessage } from '../../utils/errors';
 
-type EditableNote = { requestId: string; draft: NoteDraft; note: Note | null };
+type EditableNote = { requestId: string; draft: NoteDraft; note: Note | null; notebookId?: string };
 type UpdateAttempt = { id: string; version: number; draft: NoteDraft };
 type VersionConflict = { status: 'conflict'; error: string } & EditableNote;
-type Destination = { kind: 'new' } | { kind: 'note'; id: string };
+type Destination = { kind: 'new'; notebookId?: string } | { kind: 'note'; id: string }
+  | { kind: 'view'; change: () => void };
 export type EditorState =
   | { status: 'empty' }
   | { status: 'loading'; noteId: string }
@@ -31,6 +32,9 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
   const loadController = useRef<AbortController | null>(null);
   const navigationVersion = useRef(0);
   const lastChangedAt = useRef(0);
+  const mutation = useRef(false);
+  const [organizing, setOrganizing] = useState(false);
+  const [organizationError, setOrganizationError] = useState('');
 
   function commit(next: EditorState) {
     current.current = next;
@@ -51,7 +55,7 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
   function saveOnce(): Promise<Note | null> {
     if (inFlight.current) return inFlight.current;
     const snapshot = current.current;
-    if (!('draft' in snapshot) || snapshot.status === 'conflict') return Promise.resolve(null);
+    if (!('draft' in snapshot) || snapshot.status === 'conflict' || snapshot.note?.deletedAt) return Promise.resolve(null);
     if (!hasDraftChanges(snapshot) && snapshot.status !== 'failed') return Promise.resolve(snapshot.note);
     // Always retry creation with the same empty payload, even if input has advanced.
     // Once creation is confirmed, current input is saved with PUT on the same ID.
@@ -59,12 +63,12 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
       id: snapshot.note.id, version: snapshot.note.version, draft: snapshot.draft,
     });
     const submitted = update?.draft ?? emptyDraft();
-    commit({ status: 'saving', requestId: snapshot.requestId, draft: snapshot.draft, note: snapshot.note });
+    commit({ ...snapshot, status: 'saving' });
     const operation = (async () => {
       try {
         const saved = update
           ? await updateNote(update.id, submitted, update.version)
-          : await createNote(submitted, snapshot.requestId);
+          : await createNote(submitted, snapshot.requestId, snapshot.notebookId);
         retryUpdate.current = null;
         onSaved(saved);
         const latest = current.current;
@@ -115,8 +119,14 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
   async function navigate(destination: Destination, restoreOnFailure?: VersionConflict) {
     loadController.current?.abort();
     retryUpdate.current = null;
+    setOrganizationError('');
+    if (destination.kind === 'view') {
+      commit({ status: 'empty' });
+      destination.change();
+      return;
+    }
     if (destination.kind === 'new') {
-      commit({ status: 'ready', note: null, requestId: crypto.randomUUID(), draft: emptyDraft() });
+      commit({ status: 'ready', note: null, requestId: crypto.randomUUID(), draft: emptyDraft(), notebookId: destination.notebookId });
       await saveOnce();
       return;
     }
@@ -139,6 +149,7 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
   }
 
   async function requestNavigation(destination: Destination) {
+    if (mutation.current) return;
     const latest = current.current;
     if (destination.kind === 'note' && 'note' in latest && latest.note?.id === destination.id) return;
     const version = ++navigationVersion.current;
@@ -155,9 +166,39 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
 
   function editDraft(update: (draft: NoteDraft) => NoteDraft) {
     const latest = current.current;
-    if (!('draft' in latest)) return;
+    if (!('draft' in latest) || mutation.current || latest.note?.deletedAt) return;
     lastChangedAt.current = Date.now();
     commit({ ...latest, draft: update(latest.draft) });
+  }
+
+  async function changeOrganization(update: (note: Note) => Promise<Note>, closeAfter = false) {
+    const initial = current.current;
+    if (mutation.current || !('draft' in initial) || !initial.note) return false;
+    mutation.current = true;
+    ++navigationVersion.current;
+    setOrganizing(true);
+    setOrganizationError('');
+    try {
+      if (!await flush()) return false;
+      const latest = current.current;
+      if (!('draft' in latest) || !latest.note) return false;
+      const saved = await update(latest.note);
+      onSaved(saved);
+      commit(closeAfter ? { status: 'empty' } : {
+        status: 'ready', requestId: saved.id, note: saved, draft: toDraft(saved),
+      });
+      return true;
+    } catch (cause) {
+      const latest = current.current;
+      if (cause instanceof ApiError && cause.status === 409 && 'draft' in latest)
+        commit({ ...latest, status: 'conflict', error: errorMessage(cause) });
+      else
+        setOrganizationError(errorMessage(cause));
+      return false;
+    } finally {
+      mutation.current = false;
+      setOrganizing(false);
+    }
   }
 
   async function resolveNavigation(save: boolean) {
@@ -172,8 +213,9 @@ export function useNoteEditor(onSaved: (note: Note) => void) {
   }
 
   return {
-    state, pendingDestination,
-    start: () => { void requestNavigation({ kind: 'new' }); },
+    state, pendingDestination, organizing, organizationError, changeOrganization,
+    start: (notebookId?: string) => { void requestNavigation({ kind: 'new', notebookId }); },
+    switchView: (change: () => void) => { void requestNavigation({ kind: 'view', change }); },
     select: (id: string) => { void requestNavigation({ kind: 'note', id }); },
     change: (field: 'title' | 'content', value: string) => editDraft(draft => ({ ...draft, [field]: value })),
     submit: flush,

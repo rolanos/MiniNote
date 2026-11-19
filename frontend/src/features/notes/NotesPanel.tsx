@@ -1,4 +1,4 @@
-import type { NoteListItem } from '../../api/notes';
+import type { NoteListItem, Tag } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 import { formatDate, formatNoteCount } from '../../utils/format';
 
@@ -10,18 +10,37 @@ interface NotesPanelProps {
   onCreate: () => void;
   onReload: () => void;
   onSelect: (id: string) => void;
+  trash: boolean;
+  query: string;
+  tagId: string;
+  tags: Tag[];
+  onQuery: (value: string) => void;
+  onTag: (id: string) => void;
+  disabled: boolean;
 }
 
-export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onReload, onSelect }: NotesPanelProps) {
+export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onReload, onSelect,
+  trash, query, tagId, tags, onQuery, onTag, disabled }: NotesPanelProps) {
   const empty = notes.length === 0;
+  const filtered = Boolean(query.trim() || tagId);
 
   return (
     <section className="notes-panel" aria-labelledby="notes-heading">
       <div className="notes-heading-row">
-        <h2 className="section-title" id="notes-heading"><Icon name="layers" />Заметки</h2>
+        <h2 className="section-title" id="notes-heading"><Icon name={trash ? 'trash' : 'layers'} />{trash ? 'Корзина' : 'Заметки'}</h2>
         <span className="count-badge">{loading || error ? '—' : notes.length}</span>
       </div>
-      <p className="panel-caption">Всё важное — под рукой</p>
+      {!trash && (
+        <div className="notes-filters">
+          <input type="search" className="control" placeholder="Поиск заметок" aria-label="Поиск заметок"
+            value={query} disabled={disabled} onChange={event => onQuery(event.target.value)} />
+          <select className="control" aria-label="Фильтр по тегу" value={tagId} disabled={disabled}
+            onChange={event => onTag(event.target.value)}>
+            <option value="">Все теги</option>
+            {tags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+          </select>
+        </div>
+      )}
       <div className="notes-list" aria-busy={loading}>
         {error && (
           <div className="list-error" role="alert">
@@ -38,11 +57,12 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
         {!loading && !error && empty && (
           <div className="list-empty">
             <div className="empty-icon"><Icon name="note" size={27} /></div>
-            <h3>Здесь будут ваши заметки</h3>
-            <p>Создайте первую, чтобы сохранить<br />идею, мысль или важную деталь.</p>
-            <button className="text-button" onClick={onCreate}>
-              <Icon name="plus" size={17} />Создать заметку
-            </button>
+            <h3>{trash ? 'Корзина пуста' : filtered ? 'Ничего не найдено' : 'Здесь будут ваши заметки'}</h3>
+            {!trash && !filtered && (
+              <button className="text-button" disabled={disabled} onClick={onCreate}>
+                <Icon name="plus" size={17} />Создать заметку
+              </button>
+            )}
           </div>
         )}
         {!empty && (
@@ -54,13 +74,15 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
                   className={`note-card ${note.id === currentNoteId ? 'is-current' : ''}`}
                   aria-label={`Открыть заметку: ${note.title}`}
                   aria-current={note.id === currentNoteId ? 'true' : undefined}
+                  disabled={disabled}
                   onClick={() => onSelect(note.id)}
                 >
                   <Icon name="note" size={25} />
                   <div className="note-card-content">
                     <h3>{note.title}</h3>
                     <p>{note.preview.trim() || 'Пустая заметка'}</p>
-                    <time dateTime={note.createdAt}>{formatDate(note.createdAt)}</time>
+                    <div className="card-meta"><span>{note.notebookName}</span>
+                      <time dateTime={note.createdAt}>{formatDate(note.createdAt)}</time></div>
                   </div>
                 </button>
               </li>

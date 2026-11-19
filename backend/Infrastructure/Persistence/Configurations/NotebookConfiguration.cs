@@ -10,7 +10,7 @@ public sealed class NotebookConfiguration : IEntityTypeConfiguration<Notebook>
     {
         builder.HasKey(notebook => notebook.Id);
         builder.Property(notebook => notebook.Id).ValueGeneratedNever();
-        builder.Property(notebook => notebook.Name).HasMaxLength(100).IsRequired();
+        builder.Property(notebook => notebook.Name).HasMaxLength(Notebook.MaxNameLength).IsRequired();
         builder.HasData(new { Id = Notebook.PersonalId, Name = Notebook.PersonalName });
     }
 }
