@@ -190,9 +190,13 @@ public sealed class NoteRepository(NotesDbContext db) : INoteRepository
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<TagResponse>> ListTagsAsync(CancellationToken cancellationToken) =>
-        await db.Tags.AsNoTracking().OrderBy(tag => tag.Name)
+    public async Task<IReadOnlyList<TagResponse>> ListTagsAsync(CancellationToken cancellationToken)
+    {
+        var activeTagIds = db.Notes.Where(note => note.DeletedAt == null)
+            .SelectMany(note => note.Tags).Select(tag => tag.Id);
+        return await db.Tags.AsNoTracking().Where(tag => activeTagIds.Contains(tag.Id)).OrderBy(tag => tag.Name)
             .Select(tag => new TagResponse(tag.Id, tag.Name)).ToListAsync(cancellationToken);
+    }
 
     public async Task<(Note Note, bool Created)> AddOrGetAsync(Note note, CancellationToken cancellationToken)
     {

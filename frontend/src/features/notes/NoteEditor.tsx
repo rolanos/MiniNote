@@ -13,13 +13,14 @@ interface NoteEditorProps {
   onSubmit: () => Promise<boolean>;
   onRetryLoad: () => void;
   onReloadConflict: () => void;
+  onTrash: () => void;
   organization?: ReactNode;
   organizing?: boolean;
   trashView?: boolean;
 }
 
 export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRetryLoad, onReloadConflict,
-  organization, organizing, trashView }: NoteEditorProps) {
+  onTrash, organization, organizing, trashView }: NoteEditorProps) {
   const titleInput = useRef<HTMLInputElement>(null);
   const requestId = 'requestId' in state ? state.requestId : null;
 
@@ -65,12 +66,23 @@ export function NoteEditor({ state, hasNotes, onStart, onChange, onSubmit, onRet
   const saved = Boolean(savedNote) && !dirty && !saving && !failed && !conflict && !trashed;
   const hint = saving ? 'Сохраняем на сервере…'
     : failed || conflict ? 'Не удалось сохранить изменения' : 'Ожидание автосохранения…';
+  const notebookName = savedNote?.notebookName ?? 'Личное';
 
   return (
     <form className="note-form" onSubmit={event => event.preventDefault()}>
       <div className="editor-toolbar">
-        <span className="notebook-pill"><Icon name="book" size={20} />{savedNote?.notebookName ?? 'Личное'}</span>
-        <span className="editor-mode">{trashed ? 'Только просмотр' : 'Автосохранение'}</span>
+        <span className="notebook-pill" title={notebookName}>
+          <Icon name="book" size={20} /><span>{notebookName}</span>
+        </span>
+        <div className="editor-toolbar-actions">
+          <span className="editor-mode">{trashed ? 'Только просмотр' : 'Автосохранение'}</span>
+          {savedNote && !trashed && (
+            <button type="button" className="editor-trash" aria-label="В корзину" title="В корзину"
+              disabled={organizing || conflict} onClick={onTrash}>
+              <Icon name="trash" size={18} />
+            </button>
+          )}
+        </div>
       </div>
       {organization}
       <fieldset className="note-fields" disabled={trashed || organizing}>

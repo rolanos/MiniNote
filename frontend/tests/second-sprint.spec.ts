@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import type { Note, NoteListItem, Notebook, Tag } from '../src/api/notes';
 
@@ -29,6 +29,20 @@ const noteCard = (page: Page, title: string) =>
 const view = (page: Page, name: string) =>
   page.getByRole('navigation', { name: 'Разделы заметок' }).getByRole('button', { name, exact: true });
 
+async function dragToEdge(page: Page, origin: Locator, destination: Locator, edge: 'before' | 'after') {
+  await origin.scrollIntoViewIfNeeded();
+  await destination.scrollIntoViewIfNeeded();
+  const from = (await origin.boundingBox())!;
+  const to = (await destination.boundingBox())!;
+  const y = to.y + to.height * (edge === 'before' ? 0.2 : 0.8);
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 14, y, { steps: 10 });
+  await page.mouse.move(to.x + 16, y + 2);
+  await expect(destination).toHaveAttribute('data-reorder-edge', edge);
+  await page.mouse.up();
+}
+
 test('Ручной порядок блокнотов и заметок сохраняется после перезагрузки и редактирования', async ({ page, request }) => {
   const run = randomUUID();
   const source = await createNotebook(request, `А ${run}`);
@@ -41,18 +55,7 @@ test('Ручной порядок блокнотов и заметок сохр�
   const nav = page.getByRole('navigation', { name: 'Разделы заметок' });
   const notebookButtons = nav.getByRole('button').filter({ hasText: run });
   await expect(notebookButtons).toHaveText([source.name, other.name]);
-  const origin = view(page, other.name);
-  const destination = view(page, source.name);
-  await origin.scrollIntoViewIfNeeded();
-  await destination.scrollIntoViewIfNeeded();
-  const from = (await origin.boundingBox())!;
-  const to = (await destination.boundingBox())!;
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(to.x + 14, to.y + 6, { steps: 10 });
-  await page.mouse.move(to.x + 16, to.y + 8);
-  await expect(destination).toHaveAttribute('data-reorder-edge', 'before');
-  await page.mouse.up();
+  await dragToEdge(page, view(page, other.name), view(page, source.name), 'before');
   await expect(notebookButtons).toHaveText([other.name, source.name]);
   await expect(view(page, 'Все заметки')).toHaveAttribute('aria-current', 'page');
 
@@ -61,7 +64,8 @@ test('Ручной порядок блокнотов и заметок сохр�
   await expect(titles).toHaveText([newer.title, older.title]);
   await noteCard(page, newer.title).click();
   await expect(page.getByLabel('Заголовок', { exact: true })).toHaveValue(newer.title);
-  await noteCard(page, newer.title).locator('h3').dragTo(noteCard(page, older.title).locator('time'));
+  const olderRow = page.getByRole('listitem').filter({ has: noteCard(page, older.title) });
+  await dragToEdge(page, noteCard(page, newer.title).locator('h3'), olderRow, 'after');
   await expect(titles).toHaveText([older.title, newer.title]);
   await expect(page.getByLabel('Заголовок', { exact: true })).toHaveValue(newer.title);
 
@@ -172,7 +176,9 @@ test('US-08 и US-09: фильтры работают вместе, тег мо�
 
   await page.goto('/');
   await view(page, notebook.name).click();
-  await page.getByLabel('Фильтр по тегу').selectOption({ label: tag });
+  const tagFilter = page.getByLabel('Фильтр по тегу');
+  const tagOption = tagFilter.getByRole('option', { name: tag, exact: true });
+  await tagFilter.selectOption({ label: tag });
   const search = page.getByRole('searchbox', { name: 'Поиск заметок' });
   await search.fill(needle.toUpperCase());
   await expect(noteCard(page, included.title)).toBeVisible();
@@ -184,11 +190,26 @@ test('US-08 и US-09: фильтры работают вместе, тег мо�
   await noteCard(page, included.title).click();
   await page.getByRole('button', { name: `Снять тег: ${tag}` }).click();
   await expect(page.getByText('Ничего не найдено')).toBeVisible();
-  await page.getByLabel('Фильтр по тегу').selectOption('');
+  await expect(tagFilter).toHaveValue(included.tags[0].id);
+  await expect(tagOption).toHaveCount(1);
+
+  await view(page, 'Все заметки').click();
+  await search.fill(needle);
+  await noteCard(page, otherNotebook.title).click();
+  await page.getByRole('button', { name: `Снять тег: ${tag}` }).click();
+  await expect(tagFilter).toHaveValue('');
+  await expect(tagOption).toHaveCount(0);
+  await expect(search).toHaveValue(needle);
   await expect(noteCard(page, withoutTag.title)).toBeVisible();
+
+  await page.reload();
+  await view(page, notebook.name).click();
+  await expect(tagOption).toHaveCount(0);
+  await noteCard(page, included.title).click();
   await page.getByLabel('Добавить тег', { exact: true }).fill(tag.toUpperCase());
   await page.getByRole('button', { name: 'Добавить тег', exact: true }).click();
   await expect(page.getByRole('button', { name: `Снять тег: ${tag}` })).toBeVisible();
+  await expect(tagOption).toHaveCount(1);
   const updated: Note = await (await request.get(`/api/notes/${included.id}`)).json();
   expect(updated.tags).toEqual(included.tags);
 });
@@ -201,11 +222,16 @@ test('US-05 и US-06: корзина переживает перезагрузк
 
   await page.goto('/');
   await view(page, notebook.name).click();
+  const tagFilter = page.getByLabel('Фильтр по тегу');
+  const tagOption = tagFilter.getByRole('option', { name: tag, exact: true });
+  await tagFilter.selectOption({ label: tag });
   await noteCard(page, original.title).click();
   await expect(page.getByRole('checkbox', { name: 'Проверено' })).toBeChecked();
-  await page.getByRole('button', { name: 'В корзину', exact: true }).click();
+  await page.locator('.editor-toolbar').getByRole('button', { name: 'В корзину', exact: true }).click();
   await expect(noteCard(page, original.title)).toHaveCount(0);
   await expect(noteCard(page, untouched.title)).toBeVisible();
+  await expect(tagFilter).toHaveValue('');
+  await expect(tagOption).toHaveCount(0);
   const activeSearch: NoteListItem[] = await (await request.get('/api/notes', {
     params: { query: 'Важное', notebookId: notebook.id, tagId: original.tags[0].id },
   })).json();
@@ -219,6 +245,7 @@ test('US-05 и US-06: корзина переживает перезагрузк
   await page.getByRole('button', { name: 'Восстановить заметку' }).click();
   await expect(noteCard(page, original.title)).toHaveCount(0);
   await view(page, notebook.name).click();
+  await expect(tagOption).toHaveCount(1);
   await noteCard(page, original.title).click();
   await expect(page.getByRole('checkbox', { name: 'Проверено' })).toBeChecked();
   await expect(page.getByRole('button', { name: `Снять тег: ${tag}` })).toBeVisible();

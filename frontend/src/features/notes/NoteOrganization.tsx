@@ -2,12 +2,12 @@ import { useState } from 'react';
 import type { Note, OrganizationChange, Tag } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 
-export function NoteOrganization({ note, tags, disabled, onChange, onTrash }: {
+export function NoteOrganization({ note, tags, disabled, onChange, onRestore }: {
   note: Note;
   tags: Tag[];
   disabled: boolean;
   onChange: (change: OrganizationChange) => Promise<boolean>;
-  onTrash: () => void;
+  onRestore: () => void;
 }) {
   const [tagName, setTagName] = useState('');
 
@@ -20,7 +20,7 @@ export function NoteOrganization({ note, tags, disabled, onChange, onTrash }: {
     return <div className="organization-controls">
       <div className="organization-actions">
         <span className="editor-mode">В корзине · {note.notebookName}</span>
-        <button type="button" className="button button-secondary" disabled={disabled} onClick={onTrash}>
+        <button type="button" className="button button-secondary" disabled={disabled} onClick={onRestore}>
           <Icon name="refresh" size={17} />Восстановить заметку
         </button>
       </div>
@@ -32,11 +32,6 @@ export function NoteOrganization({ note, tags, disabled, onChange, onTrash }: {
 
   return (
     <div className="organization-controls">
-      <div className="organization-actions">
-        <button type="button" className="text-button danger-action" disabled={disabled} onClick={onTrash}>
-          <Icon name="trash" size={17} />В корзину
-        </button>
-      </div>
       <div className="note-tags">
         {note.tags.map(tag => (
           <span className="tag-chip" key={tag.id}>

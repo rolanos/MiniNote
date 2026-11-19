@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listNotebooks, listTags, organizeNote, reorderItem, setNoteInTrash, type Note, type Notebook, type Tag } from './api/notes';
+import { useEffect, useMemo, useState } from 'react';
+import { listNotebooks, listTags, organizeNote, reorderItem, setNoteInTrash, type Notebook, type OrganizationChange, type Tag } from './api/notes';
 import { Icon } from './components/Icon';
 import { NoteEditor } from './features/notes/NoteEditor';
 import { NoteOrganization } from './features/notes/NoteOrganization';
@@ -29,14 +29,7 @@ export function App() {
   const filter = useMemo(() => trash ? { trash: true } : { notebookId, tagId, query: search },
     [trash, notebookId, tagId, search]);
   const { notes, loading, error, upsert, reload } = useNotes(filter);
-  const onSaved = useCallback((note: Note) => {
-    upsert(note);
-    if (note.tags.length) setTags(current => {
-      const all = new Map([...current, ...note.tags].map(tag => [tag.id, tag]));
-      return Array.from(all.values()).sort((a, b) => a.name.localeCompare(b.name));
-    });
-  }, [upsert]);
-  const editor = useNoteEditor(onSaved);
+  const editor = useNoteEditor(upsert);
   const selectedNote = 'note' in editor.state ? editor.state.note : null;
   const currentNoteId = 'noteId' in editor.state ? editor.state.noteId : selectedNote?.id;
   const announcement = selectedNote ? `Открыта заметка «${selectedNote.title}».` : '';
@@ -51,7 +44,8 @@ export function App() {
       .then(([nextNotebooks, nextTags]) => {
         if (controller.signal.aborted) return;
         setNotebooks(current => Array.from(new Map([...nextNotebooks, ...current].map(item => [item.id, item])).values()));
-        setTags(current => Array.from(new Map([...nextTags, ...current].map(item => [item.id, item])).values()));
+        setTags(nextTags);
+        setTagId(current => nextTags.some(tag => tag.id === current) ? current : '');
       })
       .catch(cause => {
         if (!controller.signal.aborted) setCatalogError(errorMessage(cause));
@@ -81,6 +75,21 @@ export function App() {
     if (success) setMoveStatus(`Заметка перенесена в «${notebook.name}».`);
   }
 
+  async function changeTags(change: OrganizationChange) {
+    const saved = await editor.changeOrganization(note => organizeNote(note, change));
+    if (saved) refreshCatalog();
+    return saved;
+  }
+
+  async function toggleTrash() {
+    const saved = await editor.changeOrganization(note => setNoteInTrash(note, !note.deletedAt), true);
+    if (saved) refreshCatalog();
+  }
+
+  function refreshCatalog() {
+    setCatalogRevision(current => current + 1);
+  }
+
   async function reorder(list: 'notes' | 'notebooks', id: string, targetId: string, before: boolean) {
     setReordering(true);
     setReorderError('');
@@ -90,7 +99,7 @@ export function App() {
       setReorderError(`Не удалось сохранить порядок. ${errorMessage(cause)}`);
     } finally {
       if (list === 'notes') reload();
-      else setCatalogRevision(current => current + 1);
+      else refreshCatalog();
       setReordering(false);
     }
   }
@@ -164,19 +173,20 @@ export function App() {
             onSubmit={editor.submit}
             onRetryLoad={() => currentNoteId && editor.select(currentNoteId)}
             onReloadConflict={editor.reloadConflict}
+            onTrash={() => void toggleTrash()}
             trashView={trash}
             organizing={editor.organizing}
             organization={selectedNote && <NoteOrganization key={selectedNote.id}
               note={selectedNote} tags={tags}
               disabled={editor.organizing || editor.state.status === 'conflict'}
-              onChange={change => editor.changeOrganization(note => organizeNote(note, change))}
-              onTrash={() => void editor.changeOrganization(note => setNoteInTrash(note, !note.deletedAt), true)} />}
+              onChange={changeTags}
+              onRestore={() => void toggleTrash()} />}
           />
         </section>
       </main>
       {catalogError && <div className="catalog-error" role="alert">
         <span>{catalogError}</span>
-        <button type="button" className="text-button" onClick={() => setCatalogRevision(current => current + 1)}>
+        <button type="button" className="text-button" onClick={refreshCatalog}>
           Повторить загрузку блокнотов и тегов
         </button>
       </div>}

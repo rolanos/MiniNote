@@ -135,13 +135,16 @@ button svg, .section-title svg { flex-shrink: 0; }
 .note-form { display: flex; flex-direction: column; width: 100%; padding: 29px 38px 0; }
 .note-fields { display: flex; flex: 1; flex-direction: column; min-inline-size: 0; padding: 0; margin: 0; border: 0; }
 .editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 26px; }
-.notebook-pill { display: inline-flex; align-items: center; gap: 10px; padding: 9px 13px; border-radius: 8px; background: #e8f5f1; color: #277e6e; font-size: 13px; }
+.notebook-pill { display: inline-flex; align-items: center; gap: 10px; min-width: 0; padding: 9px 13px; border-radius: 8px; background: #e8f5f1; color: #277e6e; font-size: 13px; }
+.notebook-pill svg { flex: none; }
+.notebook-pill > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-toolbar-actions { display: flex; flex: none; align-items: center; gap: 12px; }
+.editor-trash { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #91523f; }
+.editor-trash:hover:not(:disabled) { border-color: #dfb9ad; background: #fff5ef; color: #843e2c; }
 .editor-mode { color: #99a3a5; font-size: 11px; }
 .organization-controls { display: grid; gap: 10px; margin-bottom: 17px; }
 .organization-actions { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 10px 15px; }
 .organization-actions > .button { min-height: 34px; padding: 6px 10px; font-size: 12px; margin-bottom: 10px; }
-.danger-action { color: #99523e; }
-.danger-action:hover { color: #843e2c; }
 .note-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .tag-chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; border-radius: 7px; padding: 2px 5px 2px 8px; background: #e8f5f1; color: #236d60; font-size: 12px; overflow-wrap: anywhere; }
 .tag-chip button { border: 0; background: transparent; color: inherit; font-size: 18px; line-height: 1; padding: 2px 4px; }
