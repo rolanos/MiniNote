@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react';
+import { useRef, type DragEvent } from 'react';
 import type { NoteListItem, Tag } from '../../api/notes';
 import { Icon } from '../../components/Icon';
 import { formatDate, formatNoteCount } from '../../utils/format';
@@ -27,6 +27,15 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
   trash, query, tagId, tags, onQuery, onTag, disabled, canDrag, onDragStart, onDragEnd }: NotesPanelProps) {
   const empty = notes.length === 0;
   const filtered = Boolean(query.trim() || tagId);
+  const dragPreview = useRef<HTMLDivElement>(null);
+  const dragPreviewTitle = useRef<HTMLSpanElement>(null);
+
+  function startDrag(event: DragEvent<HTMLButtonElement>, note: NoteListItem) {
+    onDragStart(event, note);
+    if (event.defaultPrevented || !dragPreview.current || !dragPreviewTitle.current) return;
+    dragPreviewTitle.current.textContent = note.title;
+    event.dataTransfer.setDragImage(dragPreview.current, 20, 21);
+  }
 
   return (
     <section className="notes-panel" aria-labelledby="notes-heading">
@@ -80,7 +89,7 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
                   aria-current={note.id === currentNoteId ? 'true' : undefined}
                   disabled={disabled}
                   draggable={canDrag && !disabled}
-                  onDragStart={event => onDragStart(event, note)}
+                  onDragStart={event => startDrag(event, note)}
                   onDragEnd={onDragEnd}
                   onClick={() => onSelect(note.id)}
                 >
@@ -100,6 +109,10 @@ export function NotesPanel({ notes, loading, error, currentNoteId, onCreate, onR
       <footer className="notes-footer">
         {loading ? 'Загрузка…' : error ? 'Список недоступен' : formatNoteCount(notes.length)}
       </footer>
+      <div ref={dragPreview} className="note-drag-preview" aria-hidden="true">
+        <span className="note-drag-preview-icon"><Icon name="note" size={16} /></span>
+        <span ref={dragPreviewTitle} className="note-drag-preview-title" />
+      </div>
     </section>
   );
 }

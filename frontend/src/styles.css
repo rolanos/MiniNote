@@ -58,8 +58,38 @@ button svg, .section-title svg { flex-shrink: 0; }
 .notes-list ul { padding: 0; margin: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; }
 .note-card { display: flex; gap: 12px; padding: 18px 14px; border: 1px solid #e0e5e6; border-radius: 10px; background: #fff; width: 100%; text-align: left; color: inherit; }
 .note-card:hover:not(:disabled) { border-color: #88bfb2; }
-.note-card[draggable=true] { cursor: grab; }
+.note-card[draggable=true] { cursor: grab; user-select: none; }
 .note-card[draggable=true]:active { cursor: grabbing; }
+.note-drag-preview {
+  /* Keep the drag image laid out so the browser can capture it. */
+  position: fixed;
+  top: -60px;
+  left: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: 200px;
+  height: 42px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid #88bfb2;
+  border-radius: 9px;
+  background: #f7fcfa;
+  font-size: 13px;
+  font-weight: 650;
+}
+.note-drag-preview-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: #e2f4ed;
+  color: var(--teal-dark);
+}
+.note-drag-preview-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .note-card > svg { margin-top: 2px; color: #7e8c90; }
 .note-card.is-current { background: #edf8f4; border-color: #138b7a; box-shadow: 0 0 0 1px #138b7a; }
 .note-card.is-current > svg { color: #388575; }

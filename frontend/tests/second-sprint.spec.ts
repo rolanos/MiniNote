@@ -31,8 +31,23 @@ const view = (page: Page, name: string) =>
 
 test('US-07: создание в выбранном блокноте и перенос сохраняют введённый текст', async ({ page, request }) => {
   const source = await createNotebook(request);
-  const original = await createNote(request, 'До переноса', source.id);
+  const original = await createNote(request, 'До переноса', source.id,
+    `Длинный заголовок заметки для проверки изображения при переносе ${randomUUID()}`);
   const name = `Учёба ${randomUUID()}`;
+  await page.addInitScript(() => {
+    const setDragImage = DataTransfer.prototype.setDragImage;
+    DataTransfer.prototype.setDragImage = function (image, x, y) {
+      setDragImage.call(this, image, x, y);
+      const bounds = image.getBoundingClientRect();
+      const title = image.querySelector('.note-drag-preview-title');
+      document.documentElement.dataset.dragImage = JSON.stringify({
+        text: image.textContent,
+        hasIcon: Boolean(image.querySelector('svg')),
+        compact: bounds.width <= 200 && bounds.height > 0 && bounds.height < 50,
+        truncated: title && title.scrollWidth > title.clientWidth && getComputedStyle(title).textOverflow === 'ellipsis',
+      });
+    };
+  });
   await page.goto('/');
   await page.getByRole('button', { name: 'Новый блокнот' }).click();
   await page.getByLabel('Название блокнота').fill(name);
@@ -49,9 +64,13 @@ test('US-07: создание в выбранном блокноте и пере
   await view(page, source.name).click();
   await expect(noteCard(page, createdTitle)).toHaveCount(0);
   await noteCard(page, original.title).click();
-  await expect(page.getByLabel('Заголовок')).toHaveValue(original.title);
+  await expect(page.getByLabel('Заголовок', { exact: true })).toHaveValue(original.title);
   await page.getByLabel('Текст заметки').fill('Черновик непосредственно перед переносом');
   await noteCard(page, original.title).locator('h3').dragTo(view(page, name));
+  const dragImage = await page.locator('html').getAttribute('data-drag-image');
+  expect(JSON.parse(dragImage ?? '{}')).toEqual({
+    text: original.title, hasIcon: true, compact: true, truncated: true,
+  });
   await expect(page.locator('.notebook-pill')).toHaveText(name);
   await expect(noteCard(page, original.title)).toHaveCount(0);
   await view(page, name).click();
